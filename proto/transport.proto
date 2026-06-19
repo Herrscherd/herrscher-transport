@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package herrscher.transport.v1;
+
+option go_package = "github.com/Herrscherd/herrscher-transport/proto;transportpb";
+
+// Plugin is the single generic service for every contracts port. The method
+// name and JSON-encoded args travel inside the envelope, so contracts stays
+// the sole source of truth for types.
+service Plugin {
+  rpc Call(MethodEnvelope) returns (ResultEnvelope);
+}
+
+message MethodEnvelope {
+  string port = 1;          // e.g. "memory"
+  string method = 2;        // e.g. "Recall"
+  bytes json_payload = 3;   // JSON-encoded argument tuple
+}
+
+message ResultEnvelope {
+  bytes json_payload = 1;   // JSON-encoded result tuple
+  string error = 2;         // non-empty => the call returned an error
+}
