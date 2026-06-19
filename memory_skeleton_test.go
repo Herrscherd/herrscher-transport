@@ -11,6 +11,7 @@ import (
 type fakeMem struct {
 	recorded contracts.Node
 	recall   contracts.Subgraph
+	closed   int
 }
 
 func (f *fakeMem) Recall(_ context.Context, key string, depth int) (contracts.Subgraph, error) {
@@ -22,7 +23,7 @@ func (f *fakeMem) Search(_ context.Context, q contracts.Query) ([]contracts.Node
 	return []contracts.Node{{Key: "hit"}}, nil
 }
 func (f *fakeMem) Links(_ context.Context, from, to, rel string) error { return nil }
-func (f *fakeMem) Close() error                                        { return nil }
+func (f *fakeMem) Close() error                                        { f.closed++; return nil }
 
 func TestMemorySkeletonRecord(t *testing.T) {
 	fake := &fakeMem{}

@@ -69,12 +69,12 @@ func (p *MemoryProxy) Links(ctx context.Context, from, to, rel string) error {
 	return err
 }
 
+// Close releases the client-side gRPC connection only. It does not close the
+// remote Memory: the plugin-host owns that object and may serve other clients,
+// so one bridge shutting down must not tear the shared memory down.
 func (p *MemoryProxy) Close() error {
-	_, err := p.call(context.Background(), "Close")
 	if p.conn != nil {
-		if cerr := p.conn.Close(); err == nil {
-			err = cerr
-		}
+		return p.conn.Close()
 	}
-	return err
+	return nil
 }

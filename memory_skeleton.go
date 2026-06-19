@@ -79,11 +79,6 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
-	case "Close":
-		if err := m.real.Close(); err != nil {
-			return fail(err)
-		}
-		return &pb.ResultEnvelope{}, nil
 	default:
 		return fail(fmt.Errorf("transport: unknown method memory.%s", env.Method))
 	}

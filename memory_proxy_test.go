@@ -56,3 +56,39 @@ func TestMemoryProxyRoundTrip(t *testing.T) {
 		t.Fatalf("Search round-trip wrong: %+v", hits)
 	}
 }
+
+// TestProxyCloseKeepsSharedRealAndPeersAlive guards the plugin-host topology:
+// one server (one real Memory) behind two client connections. Closing one proxy
+// must release only its own connection — it must not close the shared real, and
+// the other proxy must stay usable.
+func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
+	fake := &fakeMem{}
+	lis := bufconn.Listen(1 << 20)
+	s := grpc.NewServer()
+	RegisterMemorySkeleton(s, fake)
+	go func() { _ = s.Serve(lis) }()
+	t.Cleanup(s.Stop)
+
+	dial := func() *MemoryProxy {
+		conn, err := grpc.NewClient("passthrough:///bufnet",
+			grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		p := NewMemoryProxy(pb.NewPluginClient(conn))
+		p.conn = conn
+		return p
+	}
+
+	a, b := dial(), dial()
+	if err := a.Close(); err != nil {
+		t.Fatalf("close A: %v", err)
+	}
+	if fake.closed != 0 {
+		t.Fatalf("client Close must not close the shared real memory; closed=%d", fake.closed)
+	}
+	if err := b.Record(context.Background(), contracts.Node{Key: "k"}); err != nil {
+		t.Fatalf("peer B must stay usable after A closed: %v", err)
+	}
+}
