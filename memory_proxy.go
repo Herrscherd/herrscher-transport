@@ -13,6 +13,8 @@ type MemoryProxy struct {
 	client pb.PluginClient
 }
 
+var _ contracts.Memory = (*MemoryProxy)(nil)
+
 // NewMemoryProxy builds a proxy over an established Plugin client.
 func NewMemoryProxy(c pb.PluginClient) *MemoryProxy { return &MemoryProxy{client: c} }
 
@@ -23,7 +25,7 @@ func (p *MemoryProxy) call(ctx context.Context, method string, args ...any) (*pb
 	}
 	res, err := p.client.Call(ctx, &pb.MethodEnvelope{Port: PortMemory, Method: method, JsonPayload: payload})
 	if err != nil {
-		return nil, err // transport-level failure (peer down) — clear, typed
+		return nil, err
 	}
 	if res.Error != "" {
 		return nil, errors.New(res.Error)
@@ -37,8 +39,7 @@ func (p *MemoryProxy) Recall(ctx context.Context, key string, depth int) (contra
 		return contracts.Subgraph{}, err
 	}
 	var out contracts.Subgraph
-	tuple := []any{&out}
-	if err := Unmarshal(res.JsonPayload, &tuple); err != nil {
+	if err := decodeArgs(res.JsonPayload, &out); err != nil {
 		return contracts.Subgraph{}, err
 	}
 	return out, nil
@@ -55,8 +56,7 @@ func (p *MemoryProxy) Search(ctx context.Context, q contracts.Query) ([]contract
 		return nil, err
 	}
 	var out []contracts.Node
-	tuple := []any{&out}
-	if err := Unmarshal(res.JsonPayload, &tuple); err != nil {
+	if err := decodeArgs(res.JsonPayload, &out); err != nil {
 		return nil, err
 	}
 	return out, nil

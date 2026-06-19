@@ -35,23 +35,21 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 			Key   string
 			Depth int
 		}
-		var tuple []any = []any{&a.Key, &a.Depth}
-		if err := Unmarshal(env.JsonPayload, &tuple); err != nil {
+		if err := decodeArgs(env.JsonPayload, &a.Key, &a.Depth); err != nil {
 			return fail(err)
 		}
 		sub, err := m.real.Recall(ctx, a.Key, a.Depth)
 		if err != nil {
 			return fail(err)
 		}
-		out, err := Marshal([]any{sub})
+		out, err := encodeArgs(sub)
 		if err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{JsonPayload: out}, nil
 	case "Record":
 		var n contracts.Node
-		tuple := []any{&n}
-		if err := Unmarshal(env.JsonPayload, &tuple); err != nil {
+		if err := decodeArgs(env.JsonPayload, &n); err != nil {
 			return fail(err)
 		}
 		if err := m.real.Record(ctx, n); err != nil {
@@ -60,23 +58,21 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 		return &pb.ResultEnvelope{}, nil
 	case "Search":
 		var q contracts.Query
-		tuple := []any{&q}
-		if err := Unmarshal(env.JsonPayload, &tuple); err != nil {
+		if err := decodeArgs(env.JsonPayload, &q); err != nil {
 			return fail(err)
 		}
 		nodes, err := m.real.Search(ctx, q)
 		if err != nil {
 			return fail(err)
 		}
-		out, err := Marshal([]any{nodes})
+		out, err := encodeArgs(nodes)
 		if err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{JsonPayload: out}, nil
 	case "Links":
 		var a struct{ From, To, Rel string }
-		tuple := []any{&a.From, &a.To, &a.Rel}
-		if err := Unmarshal(env.JsonPayload, &tuple); err != nil {
+		if err := decodeArgs(env.JsonPayload, &a.From, &a.To, &a.Rel); err != nil {
 			return fail(err)
 		}
 		if err := m.real.Links(ctx, a.From, a.To, a.Rel); err != nil {
