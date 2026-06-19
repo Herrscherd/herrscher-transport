@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"io"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	pb "github.com/Herrscherd/herrscher-transport/proto"
@@ -11,6 +12,7 @@ import (
 // MemoryProxy is a contracts.Memory backed by a remote plugin over gRPC.
 type MemoryProxy struct {
 	client pb.PluginClient
+	conn   io.Closer // dialed connection, released by Close; nil when the client is supplied directly
 }
 
 var _ contracts.Memory = (*MemoryProxy)(nil)
@@ -69,5 +71,10 @@ func (p *MemoryProxy) Links(ctx context.Context, from, to, rel string) error {
 
 func (p *MemoryProxy) Close() error {
 	_, err := p.call(context.Background(), "Close")
+	if p.conn != nil {
+		if cerr := p.conn.Close(); err == nil {
+			err = cerr
+		}
+	}
 	return err
 }

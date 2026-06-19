@@ -57,5 +57,7 @@ func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
 		return nil, err
 	}
 	_ = ctx
-	return NewMemoryProxy(pb.NewPluginClient(conn)), nil
+	p := NewMemoryProxy(pb.NewPluginClient(conn))
+	p.conn = conn
+	return p, nil
 }
