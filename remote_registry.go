@@ -52,11 +52,13 @@ func (r *RemoteRegistry) Memories() []RemoteEntry { return r.byCategory(contract
 
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
 func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
-	_ = ctx
 	p := NewMemoryProxy(pb.NewPluginClient(conn))
 	p.conn = conn
 	return p, nil
