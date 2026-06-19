@@ -81,3 +81,10 @@ flip layered on later; nothing in the wire format changes.
 The `memory` port is carried end to end (unary). Streaming ports (the backend's
 event fan-out over `session.<name>.events`) and the gateway/orchestrator categories
 extend this same transport.
+
+Remote mode requires a **NATS server** reachable at `$HERRSCHER_NATS` (default
+`nats://127.0.0.1:4222`) — neither the host nor a plugin process embeds one (the
+embedded server here is test-only). A current limitation: the host resolves a remote
+proxy once and pins it to that address, so a plugin restart on a *new* ephemeral port
+is not yet auto-recovered within a live session — recovery (stable address or
+re-dial on re-announce) is a follow-on.
