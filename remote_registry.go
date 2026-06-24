@@ -55,6 +55,11 @@ func (r *RemoteRegistry) Orchestrators() []RemoteEntry {
 	return r.byCategory(contracts.CategoryOrchestrator)
 }
 
+// Backends returns the announced backend plugins.
+func (r *RemoteRegistry) Backends() []RemoteEntry {
+	return r.byCategory(contracts.CategoryBackend)
+}
+
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
 func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
 	if err := ctx.Err(); err != nil {
@@ -81,6 +86,22 @@ func DialOrchestrator(ctx context.Context, e RemoteEntry) (contracts.Orchestrato
 		return nil, err
 	}
 	p := NewOrchestratorProxy(pb.NewPluginClient(conn))
+	p.conn = conn
+	return p, nil
+}
+
+// DialBackend builds a contracts.Backend proxy over the entry's gRPC address.
+// The backend streams turn events, so the proxy keeps the raw connection (for
+// NewStream) rather than the generated unary Plugin client.
+func DialBackend(ctx context.Context, e RemoteEntry) (contracts.Backend, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	p := NewBackendProxy(conn)
 	p.conn = conn
 	return p, nil
 }
