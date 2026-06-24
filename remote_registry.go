@@ -50,6 +50,11 @@ func (r *RemoteRegistry) byCategory(c contracts.Category) []RemoteEntry {
 // Memories returns the announced memory plugins.
 func (r *RemoteRegistry) Memories() []RemoteEntry { return r.byCategory(contracts.CategoryMemory) }
 
+// Orchestrators returns the announced orchestrator plugins.
+func (r *RemoteRegistry) Orchestrators() []RemoteEntry {
+	return r.byCategory(contracts.CategoryOrchestrator)
+}
+
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
 func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
 	if err := ctx.Err(); err != nil {
@@ -60,6 +65,22 @@ func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
 		return nil, err
 	}
 	p := NewMemoryProxy(pb.NewPluginClient(conn))
+	p.conn = conn
+	return p, nil
+}
+
+// DialOrchestrator builds a contracts.Orchestrator proxy over the entry's gRPC
+// address — the request/response sibling of DialMemory (the orchestrator holds
+// no per-turn stream state, so the same generic Plugin service carries it).
+func DialOrchestrator(ctx context.Context, e RemoteEntry) (contracts.Orchestrator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	p := NewOrchestratorProxy(pb.NewPluginClient(conn))
 	p.conn = conn
 	return p, nil
 }
