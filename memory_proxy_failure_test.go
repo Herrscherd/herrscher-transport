@@ -40,7 +40,7 @@ func TestDialMemoryCloseReleasesConn(t *testing.T) {
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(s.Stop)
 
-	mem, err := DialMemory(context.Background(), RemoteEntry{GrpcAddr: lis.Addr().String()})
+	mem, err := DialMemory(context.Background(), RemoteEntry{GrpcAddr: lis.Addr().String()}, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

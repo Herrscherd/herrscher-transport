@@ -7,6 +7,7 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -60,12 +61,23 @@ func (r *RemoteRegistry) Backends() []RemoteEntry {
 	return r.byCategory(contracts.CategoryBackend)
 }
 
-// DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
-func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
+// dialConn opens a gRPC connection to the entry. creds selects the transport
+// security: nil means plaintext (insecure) — the loopback default — while a
+// non-nil credentials.TransportCredentials (from TLSConfig) negotiates (m)TLS.
+func dialConn(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if creds == nil {
+		creds = insecure.NewCredentials()
+	}
+	return grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(creds))
+}
+
+// DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
+// creds selects transport security (nil = plaintext loopback).
+func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Memory, error) {
+	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -77,11 +89,8 @@ func DialMemory(ctx context.Context, e RemoteEntry) (contracts.Memory, error) {
 // DialOrchestrator builds a contracts.Orchestrator proxy over the entry's gRPC
 // address — the request/response sibling of DialMemory (the orchestrator holds
 // no per-turn stream state, so the same generic Plugin service carries it).
-func DialOrchestrator(ctx context.Context, e RemoteEntry) (contracts.Orchestrator, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Orchestrator, error) {
+	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +102,8 @@ func DialOrchestrator(ctx context.Context, e RemoteEntry) (contracts.Orchestrato
 // DialBackend builds a contracts.Backend proxy over the entry's gRPC address.
 // The backend streams turn events, so the proxy keeps the raw connection (for
 // NewStream) rather than the generated unary Plugin client.
-func DialBackend(ctx context.Context, e RemoteEntry) (contracts.Backend, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	conn, err := grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func DialBackend(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Backend, error) {
+	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
