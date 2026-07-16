@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// PortOrchestrator names the orchestrator port on the wire.
 const PortOrchestrator = "orchestrator"
 
 type orchestratorServer struct {
