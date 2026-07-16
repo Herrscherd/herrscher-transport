@@ -63,7 +63,7 @@ func (r *RemoteRegistry) Observe(a Announcement) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.entries[a.InstanceID] = RemoteEntry{Manifest: a.Manifest, GrpcAddr: a.GrpcAddr, InstanceID: a.InstanceID}
+	r.entries[a.InstanceID] = a.entry()
 }
 
 func (r *RemoteRegistry) byCategory(c contracts.Category) []RemoteEntry {

@@ -16,6 +16,13 @@ type Announcement struct {
 	InstanceID string
 }
 
+// entry projects the wire Announcement onto the registry's internal RemoteEntry.
+// The two are kept as distinct types (wire vs stored) but share a field set, so
+// the copy lives here rather than being open-coded at each Observe call.
+func (a Announcement) entry() RemoteEntry {
+	return RemoteEntry{Manifest: a.Manifest, GrpcAddr: a.GrpcAddr, InstanceID: a.InstanceID}
+}
+
 // Announce publishes an Announcement on SubjectAnnounce.
 func Announce(nc *nats.Conn, ann Announcement) error {
 	b, err := Marshal(ann)
