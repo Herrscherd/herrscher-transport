@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// PortMemory names the memory port on the wire.
 const PortMemory = "memory"
 
 type memoryServer struct {

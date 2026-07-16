@@ -25,6 +25,7 @@ type RemoteRegistry struct {
 	entries map[string]RemoteEntry // InstanceID -> entry
 }
 
+// NewRemoteRegistry returns an empty registry of remote plugin instances.
 func NewRemoteRegistry() *RemoteRegistry {
 	return &RemoteRegistry{entries: map[string]RemoteEntry{}}
 }
