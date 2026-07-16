@@ -139,6 +139,13 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 	if err != nil {
 		return "", err
 	}
+	// Derive a cancellable child so every return path (Done frame, decode error,
+	// invalid frame, transport error) releases the underlying RPC. Without this,
+	// grpc-go only reclaims the per-call context when RecvMsg reaches io.EOF —
+	// which the Done-frame happy path never does — so each turn would leak a
+	// cancelCtx registered on the long-lived, session-spanning parent ctx.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	cs, err := p.cc.NewStream(ctx, &grpc.StreamDesc{StreamName: "Respond", ServerStreams: true}, backendRespondFullMethod)
 	if err != nil {
 		return "", fmt.Errorf("backend: open stream: %w", err)

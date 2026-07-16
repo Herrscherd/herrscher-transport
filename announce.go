@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"fmt"
+
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"github.com/nats-io/nats.go"
 )
@@ -18,9 +20,12 @@ type Announcement struct {
 func Announce(nc *nats.Conn, ann Announcement) error {
 	b, err := Marshal(ann)
 	if err != nil {
-		return err
+		return fmt.Errorf("transport: marshal announcement: %w", err)
 	}
-	return nc.Publish(SubjectAnnounce, b)
+	if err := nc.Publish(SubjectAnnounce, b); err != nil {
+		return fmt.Errorf("transport: publish announcement: %w", err)
+	}
+	return nil
 }
 
 // WatchAnnouncements invokes fn for every Announcement seen on SubjectAnnounce.
