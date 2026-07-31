@@ -3,7 +3,7 @@ module github.com/Herrscherd/herrscher-transport
 go 1.25.0
 
 require (
-	github.com/Herrscherd/herrscher-contracts v0.2.12
+	github.com/Herrscherd/herrscher-contracts v0.2.13
 	github.com/nats-io/nats-server/v2 v2.10.22
 	github.com/nats-io/nats.go v1.37.0
 	google.golang.org/grpc v1.67.0

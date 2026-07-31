@@ -1,7 +1,5 @@
-github.com/Herrscherd/herrscher-contracts v0.1.4 h1:rJDYGK3bgiEyg8mmEFpZP7ArUnNO98lR+alroPOkRDE=
-github.com/Herrscherd/herrscher-contracts v0.1.4/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
-github.com/Herrscherd/herrscher-contracts v0.2.12 h1:yAVVRIxN8/azMCSCJnuVx2OY6ft7eMBYA6+3DV20IVY=
-github.com/Herrscherd/herrscher-contracts v0.2.12/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
+github.com/Herrscherd/herrscher-contracts v0.2.13 h1:ivPj30k3sqANuS+aTwK17AtWV5nBZyWHdL3MJXIjwcg=
+github.com/Herrscherd/herrscher-contracts v0.2.13/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/klauspost/compress v1.17.11 h1:In6xLpyWOi1+C7tXUUWv2ot1QvBjxevKAaI6IXrJmUc=
