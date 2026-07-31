@@ -69,6 +69,11 @@ func (p *MemoryProxy) Links(ctx context.Context, from, to, rel string) error {
 	return err
 }
 
+func (p *MemoryProxy) Unlink(ctx context.Context, from, to string) error {
+	_, err := p.call(ctx, "Unlink", from, to)
+	return err
+}
+
 // Close releases the client-side gRPC connection only. It does not close the
 // remote Memory: the plugin-host owns that object and may serve other clients,
 // so one bridge shutting down must not tear the shared memory down.

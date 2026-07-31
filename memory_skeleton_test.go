@@ -12,6 +12,7 @@ type fakeMem struct {
 	recorded contracts.Node
 	recall   contracts.Subgraph
 	closed   int
+	unlinked [2]string
 }
 
 func (f *fakeMem) Recall(_ context.Context, key string, depth int) (contracts.Subgraph, error) {
@@ -23,7 +24,11 @@ func (f *fakeMem) Search(_ context.Context, q contracts.Query) ([]contracts.Node
 	return []contracts.Node{{Key: "hit"}}, nil
 }
 func (f *fakeMem) Links(_ context.Context, from, to, rel string) error { return nil }
-func (f *fakeMem) Close() error                                        { f.closed++; return nil }
+func (f *fakeMem) Unlink(_ context.Context, from, to string) error {
+	f.unlinked = [2]string{from, to}
+	return nil
+}
+func (f *fakeMem) Close() error { f.closed++; return nil }
 
 func TestMemorySkeletonRecord(t *testing.T) {
 	fake := &fakeMem{}
@@ -39,5 +44,22 @@ func TestMemorySkeletonRecord(t *testing.T) {
 	}
 	if fake.recorded.Key != "sessions/x" {
 		t.Fatalf("Record not dispatched, got %+v", fake.recorded)
+	}
+}
+
+func TestMemorySkeletonUnlink(t *testing.T) {
+	fake := &fakeMem{}
+	srv := &memoryServer{real: fake}
+	args, _ := Marshal([]any{"facts/x", "facts/umbrella"})
+	res, err := srv.Call(context.Background(),
+		&pb.MethodEnvelope{Port: "memory", Method: "Unlink", JsonPayload: args})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if res.Error != "" {
+		t.Fatalf("unexpected error: %s", res.Error)
+	}
+	if fake.unlinked != [2]string{"facts/x", "facts/umbrella"} {
+		t.Fatalf("Unlink not dispatched, got %+v", fake.unlinked)
 	}
 }

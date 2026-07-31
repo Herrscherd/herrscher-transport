@@ -80,6 +80,15 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
+	case "Unlink":
+		var a struct{ From, To string }
+		if err := decodeArgs(env.JsonPayload, &a.From, &a.To); err != nil {
+			return fail(err)
+		}
+		if err := m.real.Unlink(ctx, a.From, a.To); err != nil {
+			return fail(err)
+		}
+		return &pb.ResultEnvelope{}, nil
 	default:
 		return fail(fmt.Errorf("transport: unknown method memory.%s", env.Method))
 	}
