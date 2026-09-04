@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -30,7 +29,7 @@ func (p *MemoryProxy) call(ctx context.Context, method string, args ...any) (*pb
 		return nil, err
 	}
 	if res.Error != "" {
-		return nil, errors.New(res.Error)
+		return nil, decodeWireError(res.JsonPayload, res.Error)
 	}
 	return res, nil
 }

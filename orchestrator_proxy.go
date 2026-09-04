@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -31,7 +30,7 @@ func (p *OrchestratorProxy) call(ctx context.Context, method string, args ...any
 		return nil, err
 	}
 	if res.Error != "" {
-		return nil, errors.New(res.Error)
+		return nil, decodeWireError(res.JsonPayload, res.Error)
 	}
 	return res, nil
 }

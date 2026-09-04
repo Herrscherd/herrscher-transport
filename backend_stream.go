@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	pb "github.com/Herrscherd/herrscher-transport/proto"
@@ -85,10 +86,15 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 
 	// onEvent forwards each mid-turn event as its own frame, preserving order.
 	// A send failure (the client hung up) is latched so later events are dropped
-	// and the handler returns the transport error instead of the reply frame.
-	var sendErr error
+	var (
+		mu      sync.Mutex
+		sendErr error
+		closed  bool
+	)
 	onEvent := func(e contracts.BackendEvent) {
-		if sendErr != nil {
+		mu.Lock()
+		defer mu.Unlock()
+		if closed || sendErr != nil {
 			return
 		}
 		ev := e
@@ -103,8 +109,12 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 	}
 
 	reply, respErr := s.real.Respond(stream.Context(), prompt, onEvent)
-	if sendErr != nil {
-		return fmt.Errorf("transport: backend event stream: %w", sendErr)
+	mu.Lock()
+	closed = true
+	streamErr := sendErr
+	mu.Unlock()
+	if streamErr != nil {
+		return fmt.Errorf("transport: backend event stream: %w", streamErr)
 	}
 	payload, err := Marshal(backendFrame{Done: true, Reply: reply, Error: errString(respErr)})
 	if err != nil {
