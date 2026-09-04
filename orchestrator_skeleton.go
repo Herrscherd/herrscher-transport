@@ -22,7 +22,7 @@ type orchestratorServer struct {
 // surface is request/response (Context/Observe/Consolidate); the orchestrator
 // holds no streaming turn state, unlike the backend.
 func RegisterOrchestratorSkeleton(s *grpc.Server, real contracts.Orchestrator) {
-	pb.RegisterPluginServer(s, &orchestratorServer{real: real})
+	routerFor(s).add(PortOrchestrator, &orchestratorServer{real: real})
 }
 
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {

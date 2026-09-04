@@ -19,11 +19,11 @@ type memoryServer struct {
 
 // RegisterMemorySkeleton wires a real Memory object behind the generic service.
 func RegisterMemorySkeleton(s *grpc.Server, real contracts.Memory) {
-	pb.RegisterPluginServer(s, &memoryServer{real: real})
+	routerFor(s).add(PortMemory, &memoryServer{real: real})
 }
 
 func fail(err error) (*pb.ResultEnvelope, error) {
-	return &pb.ResultEnvelope{Error: err.Error()}, nil
+	return &pb.ResultEnvelope{Error: err.Error(), JsonPayload: encodeWireError(err)}, nil
 }
 
 func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {

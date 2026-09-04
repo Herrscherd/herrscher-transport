@@ -35,11 +35,23 @@ func Announce(nc *nats.Conn, ann Announcement) error {
 	return nil
 }
 
+var OnDecodeError func(error)
+
 // WatchAnnouncements invokes fn for every Announcement seen on SubjectAnnounce.
 func WatchAnnouncements(nc *nats.Conn, fn func(Announcement)) error {
+	return WatchAnnouncementsFunc(nc, fn, nil)
+}
+
+func WatchAnnouncementsFunc(nc *nats.Conn, fn func(Announcement), onErr func(error)) error {
+	if onErr == nil {
+		onErr = OnDecodeError
+	}
 	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement
 		if err := Unmarshal(msg.Data, &ann); err != nil {
+			if onErr != nil {
+				onErr(fmt.Errorf("transport: decode announcement: %w", err))
+			}
 			return
 		}
 		fn(ann)

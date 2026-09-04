@@ -50,12 +50,12 @@ func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
 	return r
 }
 
-// Observe records (or replaces) an announced plugin. Announcements whose GrpcAddr
-// is not a usable host:port, or that a configured allowlist rejects, are dropped:
-// the address is dialed later with real turn traffic, so an unvalidated one is a
-// redirection hazard.
 func (r *RemoteRegistry) Observe(a Announcement) {
-	if _, _, err := net.SplitHostPort(a.GrpcAddr); err != nil {
+	if a.InstanceID == "" || a.Manifest.Category == "" {
+		return
+	}
+	host, port, err := net.SplitHostPort(a.GrpcAddr)
+	if err != nil || host == "" || port == "" {
 		return
 	}
 	if r.allow != nil && !r.allow(a.GrpcAddr) {
