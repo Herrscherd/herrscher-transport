@@ -163,45 +163,64 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 	// cancelCtx registered on the long-lived, session-spanning parent ctx.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cs, err := p.cc.NewStream(ctx, &grpc.StreamDesc{StreamName: "Respond", ServerStreams: true}, backendRespondFullMethod)
+	cs, err := openRespondStream(ctx, p.cc, payload)
 	if err != nil {
-		return "", fmt.Errorf("backend: open stream: %w", err)
-	}
-	if err := cs.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: "Respond", JsonPayload: payload}); err != nil {
-		return "", fmt.Errorf("backend: send prompt: %w", err)
-	}
-	if err := cs.CloseSend(); err != nil {
-		return "", fmt.Errorf("backend: close send: %w", err)
+		return "", err
 	}
 	for {
 		frame := new(pb.ResultEnvelope)
 		if err := cs.RecvMsg(frame); err != nil {
-			if errors.Is(err, io.EOF) {
-				return "", fmt.Errorf("backend: stream ended before reply{done}: %w", io.ErrUnexpectedEOF)
-			}
-			return "", fmt.Errorf("backend: remote stream: %w", err)
+			return "", receiveFailure(err)
 		}
-		var f backendFrame
-		if err := Unmarshal(frame.JsonPayload, &f); err != nil {
-			return "", fmt.Errorf("backend: decode frame: %w", err)
+		reply, done, err := applyBackendFrame(frame, onEvent)
+		if done {
+			return reply, err
 		}
-		if f.Event != nil {
-			if onEvent != nil {
-				onEvent(*f.Event)
-			}
-			continue
+	}
+}
+
+func openRespondStream(ctx context.Context, cc grpc.ClientConnInterface, payload []byte) (grpc.ClientStream, error) {
+	cs, err := cc.NewStream(ctx, &grpc.StreamDesc{StreamName: "Respond", ServerStreams: true}, backendRespondFullMethod)
+	if err != nil {
+		return nil, fmt.Errorf("backend: open stream: %w", err)
+	}
+	if err := cs.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: "Respond", JsonPayload: payload}); err != nil {
+		return nil, fmt.Errorf("backend: send prompt: %w", err)
+	}
+	if err := cs.CloseSend(); err != nil {
+		return nil, fmt.Errorf("backend: close send: %w", err)
+	}
+	return cs, nil
+}
+
+func receiveFailure(err error) error {
+	if errors.Is(err, io.EOF) {
+		return fmt.Errorf("backend: stream ended before reply{done}: %w", io.ErrUnexpectedEOF)
+	}
+	return fmt.Errorf("backend: remote stream: %w", err)
+}
+
+func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEvent)) (string, bool, error) {
+	var f backendFrame
+	if err := Unmarshal(frame.JsonPayload, &f); err != nil {
+		return "", true, fmt.Errorf("backend: decode frame: %w", err)
+	}
+	if f.Event != nil {
+		if onEvent != nil {
+			onEvent(*f.Event)
 		}
-		if f.Done {
-			if f.Error != "" {
-				return f.Reply, &remoteError{message: f.Error}
-			}
-			return f.Reply, nil
-		}
+		return "", false, nil
+	}
+	if !f.Done {
 		// A frame that is neither an event nor the terminal Done is a protocol
 		// violation; fail loud rather than silently skipping it and waiting for a
 		// boundary that may never come.
-		return "", ErrInvalidFrame
+		return "", true, ErrInvalidFrame
 	}
+	if f.Error != "" {
+		return f.Reply, true, &remoteError{message: f.Error}
+	}
+	return f.Reply, true, nil
 }
 
 // Close releases the client-side gRPC connection only. It never closes the

@@ -39,19 +39,24 @@ func TestTLSConfigValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.cfg.Validate()
-			if tc.wantErr && err == nil {
-				t.Fatalf("Validate() = nil, want a half-configuration error")
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("Validate() = %v, want nil", err)
-			}
-			for _, n := range tc.names {
-				if !strings.Contains(err.Error(), n) {
-					t.Fatalf("error %q must name the missing field %q", err, n)
-				}
-			}
+			assertValidateOutcome(t, tc.cfg, tc.wantErr, tc.names)
 		})
+	}
+}
+
+func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []string) {
+	t.Helper()
+	err := cfg.Validate()
+	if wantErr && err == nil {
+		t.Fatalf("Validate() = nil, want a half-configuration error")
+	}
+	if !wantErr && err != nil {
+		t.Fatalf("Validate() = %v, want nil", err)
+	}
+	for _, n := range names {
+		if !strings.Contains(err.Error(), n) {
+			t.Fatalf("error %q must name the missing field %q", err, n)
+		}
 	}
 }
 
