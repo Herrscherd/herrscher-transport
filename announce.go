@@ -20,7 +20,9 @@ func (a Announcement) entry() RemoteEntry {
 	return RemoteEntry(a)
 }
 
-// Announce publishes an Announcement on SubjectAnnounce.
+// Announce publishes an Announcement on SubjectAnnounce. It returns the marshal
+// or publish error wrapped with a transport prefix; it has no sentinel or typed
+// error.
 func Announce(conn *nats.Conn, ann Announcement) error {
 	payload, err := Marshal(ann)
 	if err != nil {
@@ -33,13 +35,16 @@ func Announce(conn *nats.Conn, ann Announcement) error {
 }
 
 // WatchAnnouncements invokes fn for every Announcement seen on SubjectAnnounce.
+// It returns the NATS subscribe error and has no sentinel or typed error; decode
+// failures are dropped silently.
 func WatchAnnouncements(nc *nats.Conn, fn func(Announcement)) error {
 	return WatchAnnouncementsFunc(nc, fn, nil)
 }
 
 // WatchAnnouncementsFunc invokes onAnnouncement for every Announcement seen on
 // SubjectAnnounce and passes each decode failure to onErr. A nil onErr drops
-// the failures silently.
+// the failures silently. It returns the NATS subscribe error; it has no sentinel
+// or typed error.
 func WatchAnnouncementsFunc(nc *nats.Conn, onAnnouncement func(Announcement), onErr func(error)) error {
 	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement

@@ -121,7 +121,10 @@ func requireLoopback(addr string) error {
 }
 
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
-// creds selects transport security (nil = plaintext loopback).
+// creds selects transport security (nil = plaintext loopback). It returns the
+// context error when ctx is already done, *PlaintextDialError when creds is nil
+// and the address is not loopback, and a wrapped address error when the address
+// has no port.
 func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Memory, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
@@ -134,7 +137,9 @@ func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportC
 
 // DialOrchestrator builds a contracts.Orchestrator proxy over the entry's gRPC
 // address. It is the request/response sibling of DialMemory: the orchestrator holds
-// no per-turn stream state, so the same generic Plugin service carries it.
+// no per-turn stream state, so the same generic Plugin service carries it. Its
+// errors are the same as DialMemory: the context error, *PlaintextDialError, or a
+// wrapped address error.
 func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Orchestrator, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
@@ -147,7 +152,9 @@ func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.Tran
 
 // DialBackend builds a contracts.Backend proxy over the entry's gRPC address.
 // The backend streams turn events, so the proxy keeps the raw connection (for
-// NewStream) rather than the generated unary Plugin client.
+// NewStream) rather than the generated unary Plugin client. Its errors are the
+// same as DialMemory: the context error, *PlaintextDialError, or a wrapped address
+// error.
 func DialBackend(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Backend, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {

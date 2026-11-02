@@ -142,6 +142,8 @@ func NewBackendProxy(cc grpc.ClientConnInterface) *BackendProxy { return &Backen
 // the terminal Done frame. A stream that ends before the Done frame (a remote
 // crash or a dropped connection mid-turn) surfaces as an error so the host's
 // turn loop abandons the in-flight turn (the hangup path), never hanging.
+// It returns ErrInvalidFrame when a frame is neither an event nor the Done frame,
+// and a remote error when the Done frame carries an error.
 func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	payload, err := encodeArgs(prompt)
 	if err != nil {
