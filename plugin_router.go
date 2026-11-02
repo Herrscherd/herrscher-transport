@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -27,7 +26,7 @@ func (r *pluginRouter) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 	s, ok := r.ports[env.Port]
 	r.mu.RUnlock()
 	if !ok {
-		return fail(fmt.Errorf("transport: unknown port %q", env.Port))
+		return fail(&UnknownPortError{Port: env.Port})
 	}
 	return s.Call(ctx, env)
 }

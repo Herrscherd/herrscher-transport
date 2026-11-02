@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
@@ -28,7 +27,7 @@ func RegisterOrchestratorSkeleton(s *grpc.Server, real contracts.Orchestrator) {
 
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	if env.Port != PortOrchestrator {
-		return fail(fmt.Errorf("transport: unknown port %q", env.Port))
+		return fail(&UnknownPortError{Port: env.Port})
 	}
 	switch env.Method {
 	case "Context":
@@ -55,6 +54,6 @@ func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (
 		}
 		return &pb.ResultEnvelope{}, nil
 	default:
-		return fail(fmt.Errorf("transport: unknown method orchestrator.%s", env.Method))
+		return fail(&UnknownMethodError{Service: "orchestrator", Method: env.Method})
 	}
 }

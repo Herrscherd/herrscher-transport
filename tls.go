@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
-	"strings"
 
 	"google.golang.org/grpc/credentials"
 )
@@ -45,7 +44,7 @@ func (c TLSConfig) Validate() error {
 		missing = append(missing, "key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(missing, ", "))
+		return &TLSHalfConfiguredError{Missing: missing}
 	}
 	return nil
 }
@@ -54,7 +53,7 @@ func (c TLSConfig) Validate() error {
 // server and client credential builders.
 func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	if !c.Enabled() {
-		return tls.Certificate{}, nil, fmt.Errorf("transport: TLS not configured")
+		return tls.Certificate{}, nil, ErrTLSNotConfigured
 	}
 	if err := c.Validate(); err != nil {
 		return tls.Certificate{}, nil, err
@@ -69,7 +68,7 @@ func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return tls.Certificate{}, nil, fmt.Errorf("transport: CA %q held no usable certificate", c.CAFile)
+		return tls.Certificate{}, nil, &CANoCertificateError{File: c.CAFile}
 	}
 	return cert, pool, nil
 }

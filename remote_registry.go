@@ -124,7 +124,7 @@ func requireLoopback(addr string) error {
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
 	}
-	return fmt.Errorf("transport: refusing plaintext dial to non-loopback address %q; configure TLS for remote plugins", addr)
+	return &PlaintextDialError{Addr: addr}
 }
 
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.

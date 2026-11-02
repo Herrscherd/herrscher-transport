@@ -84,7 +84,7 @@ func RegisterBackendSkeleton(s *grpc.Server, real contracts.Backend) {
 
 func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream) error {
 	if req.Port != PortBackend {
-		return fmt.Errorf("transport: unknown port %q for backend stream", req.Port)
+		return &UnknownPortError{Port: req.Port}
 	}
 	var prompt contracts.Prompt
 	if err := decodeArgs(req.JsonPayload, &prompt); err != nil {
@@ -193,14 +193,14 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 		}
 		if f.Done {
 			if f.Error != "" {
-				return f.Reply, errors.New(f.Error)
+				return f.Reply, &remoteError{message: f.Error}
 			}
 			return f.Reply, nil
 		}
 		// A frame that is neither an event nor the terminal Done is a protocol
 		// violation; fail loud rather than silently skipping it and waiting for a
 		// boundary that may never come.
-		return "", fmt.Errorf("backend: invalid frame (neither event nor done)")
+		return "", ErrInvalidFrame
 	}
 }
 

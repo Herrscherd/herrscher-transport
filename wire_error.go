@@ -32,11 +32,11 @@ func encodeWireError(err error) []byte {
 
 func decodeWireError(payload []byte, message string) error {
 	if len(payload) == 0 {
-		return errors.New(message)
+		return &remoteError{message: message}
 	}
 	var w wireError
 	if err := Unmarshal(payload, &w); err != nil {
-		return errors.New(message)
+		return &remoteError{message: message}
 	}
 	if w.Kind == wireErrorKindBudget {
 		var budget contracts.BudgetError
@@ -44,5 +44,5 @@ func decodeWireError(payload []byte, message string) error {
 			return &budget
 		}
 	}
-	return errors.New(message)
+	return &remoteError{message: message}
 }

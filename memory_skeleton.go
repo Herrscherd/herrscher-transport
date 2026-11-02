@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"fmt"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
@@ -29,7 +28,7 @@ func fail(err error) (*pb.ResultEnvelope, error) {
 
 func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	if env.Port != PortMemory {
-		return fail(fmt.Errorf("transport: unknown port %q", env.Port))
+		return fail(&UnknownPortError{Port: env.Port})
 	}
 	switch env.Method {
 	case "Recall":
@@ -91,6 +90,6 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 		}
 		return &pb.ResultEnvelope{}, nil
 	default:
-		return fail(fmt.Errorf("transport: unknown method memory.%s", env.Method))
+		return fail(&UnknownMethodError{Service: "memory", Method: env.Method})
 	}
 }
