@@ -18,7 +18,7 @@ func memAnnounce(id, addr string) Announcement {
 
 func TestObserveDropsUnusableAddr(t *testing.T) {
 	r := NewRemoteRegistry()
-	r.Observe(memAnnounce("a", "")) // no host:port
+	r.Observe(memAnnounce("a", ""))
 	r.Observe(memAnnounce("b", "not-a-host-port"))
 	if got := r.Memories(); len(got) != 0 {
 		t.Fatalf("want unusable addresses dropped, got %+v", got)
@@ -30,7 +30,7 @@ func TestObserveAllowlistFailsClosed(t *testing.T) {
 		return strings.HasPrefix(addr, "127.0.0.1:")
 	}))
 	r.Observe(memAnnounce("trusted", "127.0.0.1:9000"))
-	r.Observe(memAnnounce("rogue", "10.0.0.5:9000")) // off-allowlist attacker address
+	r.Observe(memAnnounce("rogue", "10.0.0.5:9000"))
 
 	got := r.Memories()
 	if len(got) != 1 || got[0].InstanceID != "trusted" {
@@ -57,8 +57,6 @@ func TestDialConnRefusesPlaintextNonLoopback(t *testing.T) {
 }
 
 func TestDialConnAllowsPlaintextLoopback(t *testing.T) {
-	// grpc.NewClient is lazy, so a loopback plaintext dial succeeds without a
-	// live server; we only assert the guard does not reject it.
 	for _, addr := range []string{"127.0.0.1:9000", "localhost:9000", "[::1]:9000"} {
 		conn, err := dialConn(context.Background(), RemoteEntry{GrpcAddr: addr}, nil)
 		if err != nil {

@@ -25,8 +25,7 @@ func TestTLSConfigValidate(t *testing.T) {
 		name    string
 		cfg     TLSConfig
 		wantErr bool
-		// substrings the error message must name (the missing pieces)
-		names []string
+		names   []string
 	}{
 		{name: "plaintext (none set)", cfg: TLSConfig{}, wantErr: false},
 		{name: "full mTLS (all set)", cfg: TLSConfig{CAFile: "ca", CertFile: "c", KeyFile: "k"}, wantErr: false},
@@ -111,14 +110,11 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
-	// A client dialing plaintext (nil creds) against a mTLS server must be
-	// rejected at the handshake — the call fails rather than leaking onto an
-	// unauthenticated link.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	mem, err := DialMemory(ctx, RemoteEntry{GrpcAddr: lis.Addr().String()}, nil)
 	if err != nil {
-		return // dial itself refused — acceptable rejection
+		return
 	}
 	defer closeOrFail(t, mem)
 	if err := mem.Record(ctx, contracts.Node{Key: "k"}); err == nil {
@@ -126,8 +122,6 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	}
 }
 
-// genCertPair writes a CA, a server leaf (SAN 127.0.0.1), and a client leaf
-// (ExtKeyUsage ClientAuth) to a temp dir and returns the dir.
 func genCertPair(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

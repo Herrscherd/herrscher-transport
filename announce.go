@@ -16,9 +16,6 @@ type Announcement struct {
 	InstanceID string
 }
 
-// entry projects the wire Announcement onto the registry's internal RemoteEntry.
-// The two are kept as distinct types (wire vs stored) but share a field set, so
-// the copy lives here rather than being open-coded at each Observe call.
 func (a Announcement) entry() RemoteEntry {
 	return RemoteEntry(a)
 }

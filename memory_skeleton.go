@@ -26,7 +26,6 @@ func fail(err error) (*pb.ResultEnvelope, error) {
 	return &pb.ResultEnvelope{Error: err.Error(), JsonPayload: encodeWireError(err)}, nil
 }
 
-// Call runs the memory method named by env against the wrapped Memory and returns its encoded result, or the encoded error.
 func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	if env.Port != PortMemory {
 		return fail(&UnknownPortError{Port: env.Port})

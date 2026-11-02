@@ -50,7 +50,6 @@ func TestDialMemoryCloseReleasesConn(t *testing.T) {
 	if err := mem.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// After Close the local conn is gone: a further call must fail, not succeed.
 	if err := mem.Record(context.Background(), contracts.Node{Key: "k2"}); err == nil {
 		t.Fatal("expected error after Close released the connection, got nil")
 	}

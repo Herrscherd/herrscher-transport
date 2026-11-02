@@ -25,8 +25,8 @@ type RemoteEntry struct {
 // as contracts.Registry, keyed by category.
 type RemoteRegistry struct {
 	mu      sync.RWMutex
-	entries map[string]RemoteEntry // InstanceID -> entry
-	allow   func(addr string) bool // nil = accept any well-formed address
+	entries map[string]RemoteEntry
+	allow   func(addr string) bool
 }
 
 // RegistryOption configures a RemoteRegistry at construction.
@@ -93,12 +93,6 @@ func (r *RemoteRegistry) Backends() []RemoteEntry {
 	return r.byCategory(contracts.CategoryBackend)
 }
 
-// dialConn opens a gRPC connection to the entry. creds selects the transport
-// security: nil means plaintext (insecure) — the loopback default — while a
-// non-nil credentials.TransportCredentials (from TLSConfig) negotiates (m)TLS.
-// Plaintext is refused for any non-loopback address: dialing a remote host in
-// cleartext would put prompts/replies/memory on the wire, so this path fails
-// closed instead of silently downgrading (configure TLS for remote plugins).
 func dialConn(ctx context.Context, entry RemoteEntry, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -112,8 +106,6 @@ func dialConn(ctx context.Context, entry RemoteEntry, creds credentials.Transpor
 	return grpc.NewClient(entry.GrpcAddr, grpc.WithTransportCredentials(creds))
 }
 
-// requireLoopback fails unless addr's host is loopback, guarding the plaintext
-// (nil-creds) path from serving a remote address in cleartext.
 func requireLoopback(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {

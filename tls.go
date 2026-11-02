@@ -49,8 +49,6 @@ func (c TLSConfig) Validate() error {
 	return nil
 }
 
-// loadCertAndPool loads this host's keypair and the CA pool shared by both the
-// server and client credential builders.
 func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	if !c.Enabled() {
 		return tls.Certificate{}, nil, ErrTLSNotConfigured

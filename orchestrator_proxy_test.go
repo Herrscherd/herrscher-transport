@@ -14,7 +14,6 @@ import (
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
-// fakeOrch records what the proxy forwarded and lets a test force an error.
 type fakeOrch struct {
 	ctxOut       string
 	gotPrompt    contracts.Prompt
@@ -32,8 +31,6 @@ func (f *fakeOrch) Observe(_ context.Context, p contracts.Prompt, reply string) 
 func (f *fakeOrch) Consolidate(context.Context) error { f.consolidated++; return nil }
 func (f *fakeOrch) Close() error                      { f.closed++; return nil }
 
-// serveOrch stands up the orchestrator skeleton over an in-memory gRPC link and
-// returns a proxy plus the server/conn so a test can break the transport.
 func serveOrch(t *testing.T, impl contracts.Orchestrator) (*OrchestratorProxy, *grpc.Server, *grpc.ClientConn) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
@@ -84,7 +81,6 @@ func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 	if got := proxy.Context(context.Background()); got != "ctx" {
 		t.Fatalf("pre-break Context wrong: %q", got)
 	}
-	// Break the transport; Context must degrade to "" rather than error out.
 	s.Stop()
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)

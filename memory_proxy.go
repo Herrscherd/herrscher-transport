@@ -12,7 +12,7 @@ import (
 // MemoryProxy is a contracts.Memory backed by a remote plugin over gRPC.
 type MemoryProxy struct {
 	client pb.PluginClient
-	conn   io.Closer // dialed connection, released by Close; nil when the client is supplied directly
+	dialed io.Closer
 }
 
 var _ contracts.Memory = (*MemoryProxy)(nil)
@@ -83,8 +83,8 @@ func (p *MemoryProxy) Unlink(ctx context.Context, from, to string) error {
 // remote Memory: the plugin-host owns that object and may serve other clients,
 // so one bridge shutting down must not tear the shared memory down.
 func (p *MemoryProxy) Close() error {
-	if p.conn != nil {
-		return p.conn.Close()
+	if p.dialed != nil {
+		return p.dialed.Close()
 	}
 	return nil
 }

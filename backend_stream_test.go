@@ -15,8 +15,6 @@ import (
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
-// fakeBackend emits a fixed event sequence then returns a reply/error, recording
-// the prompt it saw and whether it was closed.
 type fakeBackend struct {
 	events    []contracts.BackendEvent
 	reply     string
@@ -34,9 +32,6 @@ func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, onEvent fun
 }
 func (f *fakeBackend) Close() error { f.closed++; return nil }
 
-// serveBackend stands up a backend skeleton (or a custom streaming server) over
-// an in-memory gRPC link and returns a proxy plus the server/conn so a test can
-// break the transport.
 func serveBackend(t *testing.T, register func(*grpc.Server)) (*BackendProxy, *grpc.Server, *grpc.ClientConn) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
@@ -108,8 +103,6 @@ func TestBackendStreamSurfacesRespondError(t *testing.T) {
 	}
 }
 
-// droppingServer sends one event then ends the stream WITHOUT a Done frame,
-// modelling a backend that crashes / drops mid-turn.
 type droppingServer struct{}
 
 func (droppingServer) respond(_ *pb.MethodEnvelope, stream grpc.ServerStream) error {
@@ -120,7 +113,7 @@ func (droppingServer) respond(_ *pb.MethodEnvelope, stream grpc.ServerStream) er
 	if err := stream.SendMsg(&pb.ResultEnvelope{JsonPayload: payload}); err != nil {
 		return err
 	}
-	return nil // no Done frame → the client sees EOF before reply{done}
+	return nil
 }
 
 func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {

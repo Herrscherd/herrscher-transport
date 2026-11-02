@@ -13,7 +13,7 @@ import (
 // gRPC, mirroring MemoryProxy.
 type OrchestratorProxy struct {
 	client pb.PluginClient
-	conn   io.Closer // dialed connection, released by Close; nil when the client is supplied directly
+	dialed io.Closer
 }
 
 var _ contracts.Orchestrator = (*OrchestratorProxy)(nil)
@@ -68,8 +68,8 @@ func (p *OrchestratorProxy) Consolidate(ctx context.Context) error {
 // tearing down the remote object is the owning host's job at session shutdown —
 // not something a closing proxy should trigger over the wire.
 func (p *OrchestratorProxy) Close() error {
-	if p.conn != nil {
-		return p.conn.Close()
+	if p.dialed != nil {
+		return p.dialed.Close()
 	}
 	return nil
 }

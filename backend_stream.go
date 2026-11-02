@@ -18,18 +18,10 @@ import (
 // events, so it rides a dedicated server-streaming service (BackendStream).
 const PortBackend = "backend"
 
-// backendRespondFullMethod is the gRPC method the proxy dials and the skeleton
-// serves. The service is hand-written (no proto regen): it reuses the generated
-// MethodEnvelope (request) and ResultEnvelope (each stream frame) so contracts
-// stays the sole source of truth for the payload types.
 const backendRespondFullMethod = "/herrscher.transport.v1.BackendStream/Respond"
 
 const respondMethod = "Respond"
 
-// backendFrame is one item in the response stream, JSON-encoded into a
-// ResultEnvelope. The backend's mid-turn events arrive as Event frames in order,
-// then exactly one terminal Done frame carries the reply (and Error if Respond
-// failed) — the reply{done} turn boundary the host depends on.
 type backendFrame struct {
 	Event *contracts.BackendEvent `json:"event,omitempty"`
 	Done  bool                    `json:"done,omitempty"`
@@ -44,7 +36,6 @@ func errString(err error) string {
 	return ""
 }
 
-// backendStreamSrv is the server side of the hand-written BackendStream service.
 type backendStreamSrv interface {
 	respond(req *pb.MethodEnvelope, stream grpc.ServerStream) error
 }
@@ -63,9 +54,6 @@ func backendRespondHandler(srv any, stream grpc.ServerStream) error {
 
 var errBackendStreamNotResponder = errors.New("backend stream: server does not respond")
 
-// backendStreamServiceDesc is the hand-authored equivalent of a protoc-generated
-// ServiceDesc for a single server-streaming RPC. gRPC registers and dispatches
-// it exactly like a generated one.
 func backendStreamServiceDesc() grpc.ServiceDesc {
 	return grpc.ServiceDesc{
 		ServiceName: "herrscher.transport.v1.BackendStream",
@@ -96,8 +84,6 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 		return fmt.Errorf("transport: decode backend prompt: %w", err)
 	}
 
-	// onEvent forwards each mid-turn event as its own frame, preserving order.
-	// A send failure (the client hung up) is latched so later events are dropped
 	var (
 		sendLock sync.Mutex
 		sendErr  error
@@ -142,8 +128,8 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 // gRPC. It holds the raw connection (NewStream needs a ClientConnInterface)
 // rather than the generated unary client the other proxies use.
 type BackendProxy struct {
-	cc   grpc.ClientConnInterface
-	conn io.Closer // dialed connection, released by Close; nil when cc is supplied directly
+	cc     grpc.ClientConnInterface
+	dialed io.Closer
 }
 
 var _ contracts.Backend = (*BackendProxy)(nil)
@@ -161,11 +147,6 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 	if err != nil {
 		return "", err
 	}
-	// Derive a cancellable child so every return path (Done frame, decode error,
-	// invalid frame, transport error) releases the underlying RPC. Without this,
-	// grpc-go only reclaims the per-call context when RecvMsg reaches io.EOF —
-	// which the Done-frame happy path never does — so each turn would leak a
-	// cancelCtx registered on the long-lived, session-spanning parent ctx.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	respondStream, err := openRespondStream(ctx, p.cc, payload)
@@ -222,9 +203,6 @@ func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendE
 		return frameOutcome{}
 	}
 	if !decoded.Done {
-		// A frame that is neither an event nor the terminal Done is a protocol
-		// violation; fail loud rather than silently skipping it and waiting for a
-		// boundary that may never come.
 		return frameOutcome{terminal: true, err: ErrInvalidFrame}
 	}
 	if decoded.Error != "" {
@@ -237,8 +215,8 @@ func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendE
 // remote backend: the plugin-host owns that process and may serve other clients,
 // so one bridge shutting down must not tear the shared backend down.
 func (p *BackendProxy) Close() error {
-	if p.conn != nil {
-		return p.conn.Close()
+	if p.dialed != nil {
+		return p.dialed.Close()
 	}
 	return nil
 }
