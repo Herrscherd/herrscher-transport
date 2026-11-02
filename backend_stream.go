@@ -24,6 +24,8 @@ const PortBackend = "backend"
 // stays the sole source of truth for the payload types.
 const backendRespondFullMethod = "/herrscher.transport.v1.BackendStream/Respond"
 
+const respondMethod = "Respond"
+
 // backendFrame is one item in the response stream, JSON-encoded into a
 // ResultEnvelope. The backend's mid-turn events arrive as Event frames in order,
 // then exactly one terminal Done frame carries the reply (and Error if Respond
@@ -69,7 +71,7 @@ func backendStreamServiceDesc() grpc.ServiceDesc {
 		ServiceName: "herrscher.transport.v1.BackendStream",
 		HandlerType: (*backendStreamSrv)(nil),
 		Streams: []grpc.StreamDesc{
-			{StreamName: "Respond", Handler: backendRespondHandler, ServerStreams: true},
+			{StreamName: respondMethod, Handler: backendRespondHandler, ServerStreams: true},
 		},
 		Metadata: "backend_stream.go",
 	}
@@ -183,11 +185,11 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 }
 
 func openRespondStream(ctx context.Context, cc grpc.ClientConnInterface, payload []byte) (grpc.ClientStream, error) {
-	cs, err := cc.NewStream(ctx, &grpc.StreamDesc{StreamName: "Respond", ServerStreams: true}, backendRespondFullMethod)
+	cs, err := cc.NewStream(ctx, &grpc.StreamDesc{StreamName: respondMethod, ServerStreams: true}, backendRespondFullMethod)
 	if err != nil {
 		return nil, fmt.Errorf("backend: open stream: %w", err)
 	}
-	if err := cs.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: "Respond", JsonPayload: payload}); err != nil {
+	if err := cs.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: respondMethod, JsonPayload: payload}); err != nil {
 		return nil, fmt.Errorf("backend: send prompt: %w", err)
 	}
 	if err := cs.CloseSend(); err != nil {
