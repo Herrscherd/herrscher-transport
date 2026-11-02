@@ -20,7 +20,7 @@ type Announcement struct {
 // The two are kept as distinct types (wire vs stored) but share a field set, so
 // the copy lives here rather than being open-coded at each Observe call.
 func (a Announcement) entry() RemoteEntry {
-	return RemoteEntry{Manifest: a.Manifest, GrpcAddr: a.GrpcAddr, InstanceID: a.InstanceID}
+	return RemoteEntry(a)
 }
 
 // Announce publishes an Announcement on SubjectAnnounce.
