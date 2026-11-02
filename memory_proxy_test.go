@@ -78,7 +78,7 @@ func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		p := NewMemoryProxy(pb.NewPluginClient(conn))
-		p.conn = conn
+		p.dialed = conn
 		return p
 	}
 

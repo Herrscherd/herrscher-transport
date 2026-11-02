@@ -45,7 +45,7 @@ func serveBackend(t *testing.T, register func(*grpc.Server)) (*BackendProxy, *gr
 		t.Fatalf("dial: %v", err)
 	}
 	p := NewBackendProxy(conn)
-	p.conn = conn
+	p.dialed = conn
 	return p, s, conn
 }
 

@@ -44,7 +44,7 @@ func serveOrch(t *testing.T, impl contracts.Orchestrator) (*OrchestratorProxy, *
 		t.Fatalf("dial: %v", err)
 	}
 	p := NewOrchestratorProxy(pb.NewPluginClient(conn))
-	p.conn = conn
+	p.dialed = conn
 	return p, s, conn
 }
 

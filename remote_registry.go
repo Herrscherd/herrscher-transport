@@ -128,7 +128,7 @@ func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportC
 		return nil, err
 	}
 	proxy := NewMemoryProxy(pb.NewPluginClient(conn))
-	proxy.conn = conn
+	proxy.dialed = conn
 	return proxy, nil
 }
 
@@ -141,7 +141,7 @@ func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.Tran
 		return nil, err
 	}
 	proxy := NewOrchestratorProxy(pb.NewPluginClient(conn))
-	proxy.conn = conn
+	proxy.dialed = conn
 	return proxy, nil
 }
 
@@ -154,6 +154,6 @@ func DialBackend(ctx context.Context, e RemoteEntry, creds credentials.Transport
 		return nil, err
 	}
 	proxy := NewBackendProxy(conn)
-	proxy.conn = conn
+	proxy.dialed = conn
 	return proxy, nil
 }
