@@ -45,8 +45,6 @@ import (
 
 const parameter = "paths=source_relative"
 
-var pluginTools = []string{"protoc-gen-go", "protoc-gen-go-grpc"}
-
 var (
 	errUsage          = errors.New("bad command line")
 	errUnreadable     = errors.New("cannot read the proto file")
@@ -196,7 +194,7 @@ func runPlugins(ctx context.Context, request *pluginpb.CodeGeneratorRequest, std
 		return nil, fmt.Errorf("%w: %w", errPlugin, err)
 	}
 	var files []*pluginpb.CodeGeneratorResponse_File
-	for _, tool := range pluginTools {
+	for _, tool := range []string{"protoc-gen-go", "protoc-gen-go-grpc"} {
 		produced, err := runPlugin(ctx, tool, input, stderr)
 		if err != nil {
 			return nil, err

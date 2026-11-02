@@ -125,7 +125,8 @@ func (droppingServer) respond(_ *pb.MethodEnvelope, stream grpc.ServerStream) er
 
 func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) {
-		s.RegisterService(&backendStreamServiceDesc, droppingServer{})
+		desc := backendStreamServiceDesc()
+		s.RegisterService(&desc, droppingServer{})
 	})
 	t.Cleanup(s.Stop)
 	t.Cleanup(func() { closeOrFail(t, conn) })

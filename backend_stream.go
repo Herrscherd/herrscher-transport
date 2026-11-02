@@ -64,13 +64,15 @@ var errBackendStreamNotResponder = errors.New("backend stream: server does not r
 // backendStreamServiceDesc is the hand-authored equivalent of a protoc-generated
 // ServiceDesc for a single server-streaming RPC. gRPC registers and dispatches
 // it exactly like a generated one.
-var backendStreamServiceDesc = grpc.ServiceDesc{
-	ServiceName: "herrscher.transport.v1.BackendStream",
-	HandlerType: (*backendStreamSrv)(nil),
-	Streams: []grpc.StreamDesc{
-		{StreamName: "Respond", Handler: backendRespondHandler, ServerStreams: true},
-	},
-	Metadata: "backend_stream.go",
+func backendStreamServiceDesc() grpc.ServiceDesc {
+	return grpc.ServiceDesc{
+		ServiceName: "herrscher.transport.v1.BackendStream",
+		HandlerType: (*backendStreamSrv)(nil),
+		Streams: []grpc.StreamDesc{
+			{StreamName: "Respond", Handler: backendRespondHandler, ServerStreams: true},
+		},
+		Metadata: "backend_stream.go",
+	}
 }
 
 type backendServer struct{ real contracts.Backend }
@@ -79,7 +81,8 @@ type backendServer struct{ real contracts.Backend }
 // remote host can serve the model edge. The skeleton forwards every onEvent as a
 // frame and closes the stream with the terminal reply frame.
 func RegisterBackendSkeleton(s *grpc.Server, real contracts.Backend) {
-	s.RegisterService(&backendStreamServiceDesc, &backendServer{real: real})
+	desc := backendStreamServiceDesc()
+	s.RegisterService(&desc, &backendServer{real: real})
 }
 
 func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream) error {
