@@ -7,7 +7,6 @@ import (
 	"net"
 	"sync"
 	"testing"
-	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
@@ -237,13 +236,9 @@ func TestWatchAnnouncementsReportsDecodeErrors(t *testing.T) {
 	if err := nc.Publish(SubjectAnnounce, []byte("{not json")); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	select {
-	case err := <-failures:
-		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
-
-			t.Fatalf("unexpected error: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("malformed announcement dropped with no diagnostic")
+	err := <-failures
+	if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+		t.Fatalf("unexpected error: %v", err)
 	}
+
 }

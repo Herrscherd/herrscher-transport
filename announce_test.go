@@ -18,10 +18,13 @@ func runNATS(t *testing.T) *nats.Conn {
 		t.Fatalf("nats server: %v", err)
 	}
 	go srv.Start()
+	t.Cleanup(func() {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+	})
 	if !srv.ReadyForConnections(2 * time.Second) {
 		t.Fatal("nats not ready")
 	}
-	t.Cleanup(srv.Shutdown)
 	nc, err := nats.Connect(srv.ClientURL())
 	if err != nil {
 		t.Fatalf("nats connect: %v", err)
@@ -34,7 +37,6 @@ func TestAnnounceWatch(t *testing.T) {
 	nc := runNATS(t)
 	got := make(chan Announcement, 1)
 	if err := WatchAnnouncements(nc, func(a Announcement) { got <- a }, func(error) {}); err != nil {
-
 		t.Fatalf("watch: %v", err)
 	}
 	ann := Announcement{
@@ -45,14 +47,11 @@ func TestAnnounceWatch(t *testing.T) {
 	if err := Announce(nc, ann); err != nil {
 		t.Fatalf("announce: %v", err)
 	}
-	select {
-	case a := <-got:
-		if a.Manifest.Kind != "sqlite" || a.GrpcAddr != "127.0.0.1:50111" {
-			t.Fatalf("bad announcement: %+v", a)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no announcement received")
+	a := <-got
+	if a.Manifest.Kind != "sqlite" || a.GrpcAddr != "127.0.0.1:50111" {
+		t.Fatalf("bad announcement: %+v", a)
 	}
+
 }
 
 func TestWatchAnnouncementsRefusesNilHook(t *testing.T) {

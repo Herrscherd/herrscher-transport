@@ -53,7 +53,6 @@ func TestDialConnRefusesPlaintextNonLoopback(t *testing.T) {
 		t.Fatal("want refusal of plaintext dial to non-loopback address")
 	}
 	if _, ok := errors.AsType[*PlaintextDialError](err); !ok {
-
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
