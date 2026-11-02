@@ -1,14 +1,15 @@
 // Command protogen generates the Go code of one .proto file with protoc-gen-go
 // and protoc-gen-go-grpc, without protoc.
 //
-// It compiles the file with protocompile, rooted at the directory of -proto,
-// then runs the two plugins pinned in the go.mod tool directive. Each file a
-// plugin returns is written under -go_out, and the names the plugins return
-// must be exactly the -output list, relative to -go_out.
+// It compiles the file with protocompile, with -root as import root, then runs
+// the two plugins pinned in the go.mod tool directive. -proto is relative to
+// -root and is the path the descriptor is registered under. Each file a plugin
+// returns is written under -go_out, and the base names of the files the plugins
+// return must be exactly the -output list.
 //
 // Usage:
 //
-//	protogen -proto <file> -go_out <dir> -output <name> [-output <name>...]
+//	protogen [-root <dir>] -proto <file> -go_out <dir> -output <name> [-output <name>...]
 //
 // Exit codes:
 //
@@ -56,6 +57,7 @@ var (
 )
 
 type config struct {
+	root    string
 	proto   string
 	goOut   string
 	outputs []string
@@ -110,9 +112,10 @@ func parseArgs(args []string) (config, error) {
 	var outputs outputList
 	flags := flag.NewFlagSet("protogen", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&cfg.proto, "proto", "", "the .proto file to generate")
+	flags.StringVar(&cfg.root, "root", ".", "the import root -proto is relative to")
+	flags.StringVar(&cfg.proto, "proto", "", "the .proto file to generate, relative to -root")
 	flags.StringVar(&cfg.goOut, "go_out", "", "the directory the generated files are written to")
-	flags.Var(&outputs, "output", "a generated file name, relative to -go_out (repeatable)")
+	flags.Var(&outputs, "output", "a generated file base name (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return config{}, fmt.Errorf("%w: %w", errUsage, err)
 	}
@@ -127,7 +130,7 @@ func parseArgs(args []string) (config, error) {
 }
 
 func generate(ctx context.Context, cfg config, stderr io.Writer) error {
-	request, err := compileRequest(ctx, cfg.proto)
+	request, err := compileRequest(ctx, cfg.root, cfg.proto)
 	if err != nil {
 		return err
 	}
@@ -141,14 +144,14 @@ func generate(ctx context.Context, cfg config, stderr io.Writer) error {
 	return writeFiles(cfg.goOut, files)
 }
 
-func compileRequest(ctx context.Context, protoPath string) (*pluginpb.CodeGeneratorRequest, error) {
-	if _, err := os.ReadFile(protoPath); err != nil {
+func compileRequest(ctx context.Context, root string, protoPath string) (*pluginpb.CodeGeneratorRequest, error) {
+	if _, err := os.ReadFile(filepath.Join(root, protoPath)); err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnreadable, err)
 	}
-	name := filepath.Base(protoPath)
+	name := filepath.ToSlash(filepath.Clean(protoPath))
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
-			ImportPaths: []string{filepath.Dir(protoPath)},
+			ImportPaths: []string{root},
 		}),
 		SourceInfoMode: protocompile.SourceInfoStandard,
 	}
@@ -223,11 +226,11 @@ func runPlugin(ctx context.Context, tool string, input []byte, stderr io.Writer)
 func checkOutputs(wanted []string, files []*pluginpb.CodeGeneratorResponse_File) error {
 	expected := make(map[string]bool, len(wanted))
 	for _, name := range wanted {
-		expected[filepath.Clean(name)] = true
+		expected[filepath.Base(name)] = true
 	}
 	produced := make(map[string]bool, len(files))
 	for _, file := range files {
-		produced[filepath.Clean(file.GetName())] = true
+		produced[filepath.Base(file.GetName())] = true
 	}
 	if len(produced) != len(files) || !maps.Equal(expected, produced) {
 		return fmt.Errorf("%w: expected %v, got %d files", errOutputMismatch, wanted, len(files))
@@ -238,6 +241,9 @@ func checkOutputs(wanted []string, files []*pluginpb.CodeGeneratorResponse_File)
 func writeFiles(goOut string, files []*pluginpb.CodeGeneratorResponse_File) error {
 	for _, file := range files {
 		target := filepath.Join(goOut, file.GetName())
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("%w: %w", errWrite, err)
+		}
 		if err := os.WriteFile(target, []byte(file.GetContent()), 0o644); err != nil {
 			return fmt.Errorf("%w: %w", errWrite, err)
 		}

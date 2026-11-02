@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -65,7 +66,8 @@ func TestCheckOutputsRefusesOtherFiles(t *testing.T) {
 
 func TestGenerateRefusesUnreadableProto(t *testing.T) {
 	cfg := config{
-		proto:   filepath.Join(t.TempDir(), "missing.proto"),
+		root:    t.TempDir(),
+		proto:   "missing.proto",
 		goOut:   t.TempDir(),
 		outputs: []string{"missing.pb.go"},
 	}
@@ -82,7 +84,8 @@ func TestGenerateWritesTheExpectedFiles(t *testing.T) {
 	}
 	outDir := t.TempDir()
 	cfg := config{
-		proto:   protoPath,
+		root:    filepath.Dir(protoPath),
+		proto:   filepath.Base(protoPath),
 		goOut:   outDir,
 		outputs: []string{"tiny.pb.go", "tiny_grpc.pb.go"},
 	}
@@ -97,5 +100,49 @@ func TestGenerateWritesTheExpectedFiles(t *testing.T) {
 		if info.Size() == 0 {
 			t.Fatalf("generated file %s is empty", name)
 		}
+	}
+}
+
+func TestParseArgsDefaultsRootToTheCurrentDirectory(t *testing.T) {
+	cfg, err := parseArgs([]string{"-proto", "proto/a.proto", "-go_out", "..", "-output", "a.pb.go"})
+	if err != nil {
+		t.Fatalf("parseArgs: %v", err)
+	}
+	if cfg.root != "." {
+		t.Fatalf("root without -root: got %q, want \".\"", cfg.root)
+	}
+	cfg, err = parseArgs([]string{"-root", "..", "-proto", "proto/a.proto", "-go_out", "..", "-output", "a.pb.go"})
+	if err != nil {
+		t.Fatalf("parseArgs with -root: %v", err)
+	}
+	if cfg.root != ".." {
+		t.Fatalf("root with -root: got %q, want \"..\"", cfg.root)
+	}
+}
+
+func TestGenerateKeepsTheRegisteredPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "proto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "proto", "tiny.proto"), []byte(tinyProto), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outDir := t.TempDir()
+	cfg := config{
+		root:    root,
+		proto:   "proto/tiny.proto",
+		goOut:   outDir,
+		outputs: []string{"tiny.pb.go", "tiny_grpc.pb.go"},
+	}
+	if err := generate(context.Background(), cfg, io.Discard); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	generated, err := os.ReadFile(filepath.Join(outDir, "proto", "tiny.pb.go"))
+	if err != nil {
+		t.Fatalf("expected generated file under the proto directory: %v", err)
+	}
+	if !strings.Contains(string(generated), "// source: proto/tiny.proto") {
+		t.Fatalf("generated file does not register proto/tiny.proto")
 	}
 }

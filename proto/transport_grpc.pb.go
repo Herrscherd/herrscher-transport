@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             (unknown)
-// source: transport.proto
+// source: proto/transport.proto
 
 package transportpb
 
@@ -125,5 +125,5 @@ var Plugin_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "transport.proto",
+	Metadata: "proto/transport.proto",
 }
