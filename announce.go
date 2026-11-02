@@ -38,11 +38,11 @@ func Announce(conn *nats.Conn, ann Announcement) error {
 // SubjectAnnounce and passes each decode failure to onDecodeErr. Both hooks are
 // required: a nil hook is refused with ErrNilHook before any subscription is made.
 // It returns the NATS subscribe error.
-func WatchAnnouncements(nc *nats.Conn, onAnnouncement func(Announcement), onDecodeErr func(error)) error {
+func WatchAnnouncements(conn *nats.Conn, onAnnouncement func(Announcement), onDecodeErr func(error)) error {
 	if onAnnouncement == nil || onDecodeErr == nil {
 		return ErrNilHook
 	}
-	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
+	_, err := conn.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement
 		if err := Unmarshal(msg.Data, &ann); err != nil {
 			onDecodeErr(fmt.Errorf("transport: decode announcement: %w", err))
