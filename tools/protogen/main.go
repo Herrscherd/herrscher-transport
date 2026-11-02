@@ -45,6 +45,12 @@ import (
 
 const parameter = "paths=source_relative"
 
+const (
+	exitUsage   = 2
+	exitNoInput = 66
+	exitIOError = 74
+)
+
 var (
 	errUsage          = errors.New("bad command line")
 	errUnreadable     = errors.New("cannot read the proto file")
@@ -97,11 +103,11 @@ func exitCode(err error) int {
 	case err == nil:
 		return 0
 	case errors.Is(err, errUsage):
-		return 2
+		return exitUsage
 	case errors.Is(err, errUnreadable):
-		return 66
+		return exitNoInput
 	case errors.Is(err, errWrite):
-		return 74
+		return exitIOError
 	default:
 		return 1
 	}
