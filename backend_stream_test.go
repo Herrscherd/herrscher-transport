@@ -163,7 +163,6 @@ func (recvNilStream) RecvMsg(any) error { return nil }
 func TestBackendRespondHandlerRefusesServerWithoutRespond(t *testing.T) {
 	if err := backendRespondHandler(struct{}{}, recvNilStream{}); !errors.Is(err, errBackendStreamNotResponder) {
 		t.Fatalf("a server without respond must be refused with errBackendStreamNotResponder, got %v", err)
-
 	}
 }
 
