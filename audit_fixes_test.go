@@ -2,9 +2,9 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -94,7 +94,8 @@ func TestUntypedErrorKeepsFlatMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := decodeWireError(res.JsonPayload, res.Error)
-	if got.Error() != "transport: unknown port \"nope\"" {
+	var remote *remoteError
+	if !errors.As(got, &remote) || remote.message != "transport: unknown port \"nope\"" {
 		t.Fatalf("flat message lost: %v", got)
 	}
 }
@@ -142,9 +143,11 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unknown port call: %v", err)
 	}
-	if !strings.Contains(res.Error, "unknown port") {
+	var remote *remoteError
+	if !errors.As(decodeWireError(res.JsonPayload, res.Error), &remote) || remote.message != "transport: unknown port \"nope\"" {
 		t.Fatalf("want unknown port rejected, got %q", res.Error)
 	}
+
 }
 
 type concurrentBackend struct{ events int }
@@ -236,7 +239,8 @@ func TestWatchAnnouncementsReportsDecodeErrors(t *testing.T) {
 	}
 	select {
 	case err := <-failures:
-		if !strings.Contains(err.Error(), "decode announcement") {
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+
 			t.Fatalf("unexpected error: %v", err)
 		}
 	case <-time.After(2 * time.Second):

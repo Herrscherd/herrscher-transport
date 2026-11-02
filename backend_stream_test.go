@@ -3,8 +3,8 @@ package transport
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
-	"strings"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -95,7 +95,8 @@ func TestBackendStreamSurfacesRespondError(t *testing.T) {
 	var got int
 	_, err := proxy.Respond(context.Background(), contracts.Prompt{},
 		func(contracts.BackendEvent) { got++ })
-	if err == nil || !strings.Contains(err.Error(), "boom") {
+	var remote *remoteError
+	if err == nil || !errors.As(err, &remote) || remote.message != "boom" {
 		t.Fatalf("expected the remote Respond error to surface, got %v", err)
 	}
 	if got != 1 {
@@ -130,7 +131,7 @@ func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {
 	if err == nil {
 		t.Fatal("a stream ending before reply{done} must surface an error (hangup), got nil")
 	}
-	if !strings.Contains(err.Error(), "before reply{done}") {
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected a hangup error, got %v", err)
 	}
 	if reply != "" {
@@ -159,7 +160,8 @@ type recvNilStream struct{ grpc.ServerStream }
 func (recvNilStream) RecvMsg(any) error { return nil }
 
 func TestBackendRespondHandlerRefusesServerWithoutRespond(t *testing.T) {
-	if err := backendRespondHandler(struct{}{}, recvNilStream{}); err == nil {
-		t.Fatal("a server without respond must be refused with an error, got nil")
+	if err := backendRespondHandler(struct{}{}, recvNilStream{}); !errors.Is(err, errBackendStreamNotResponder) {
+		t.Fatalf("a server without respond must be refused with errBackendStreamNotResponder, got %v", err)
+
 	}
 }

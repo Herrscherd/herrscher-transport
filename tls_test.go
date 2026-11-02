@@ -8,11 +8,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 	"time"
 
@@ -52,11 +53,19 @@ func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []st
 	if !wantErr && err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
 	}
+	if len(names) == 0 {
+		return
+	}
+	half, ok := errors.AsType[*TLSHalfConfiguredError](err)
+	if !ok {
+		t.Fatalf("Validate() = %v, want *TLSHalfConfiguredError", err)
+	}
 	for _, n := range names {
-		if !strings.Contains(err.Error(), n) {
-			t.Fatalf("error %q must name the missing field %q", err, n)
+		if !slices.Contains(half.Missing, n) {
+			t.Fatalf("error %v must name the missing field %q", err, n)
 		}
 	}
+
 }
 
 func TestMTLSRoundTrip(t *testing.T) {

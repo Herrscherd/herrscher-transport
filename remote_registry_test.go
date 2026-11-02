@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -51,7 +52,8 @@ func TestDialConnRefusesPlaintextNonLoopback(t *testing.T) {
 	if err == nil {
 		t.Fatal("want refusal of plaintext dial to non-loopback address")
 	}
-	if !strings.Contains(err.Error(), "non-loopback") {
+	if _, ok := errors.AsType[*PlaintextDialError](err); !ok {
+
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
