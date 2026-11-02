@@ -15,7 +15,7 @@ import (
 func TestProxyErrorsWhenPeerDown(t *testing.T) {
 	lis := listenLoopback(t)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(NewPluginRouter(s), &fakeMem{})
+	registerMemory(t, NewPluginRouter(s), &fakeMem{})
 	serveInBackground(t, s, lis)
 
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -36,7 +36,7 @@ func TestProxyErrorsWhenPeerDown(t *testing.T) {
 func TestDialMemoryCloseReleasesConn(t *testing.T) {
 	lis := listenLoopback(t)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(NewPluginRouter(s), &fakeMem{})
+	registerMemory(t, NewPluginRouter(s), &fakeMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 

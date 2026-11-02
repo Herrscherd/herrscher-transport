@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -10,11 +11,24 @@ import (
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
+func TestPluginRouterRefusesASecondRegistrationOfAPort(t *testing.T) {
+	router := NewPluginRouter(grpc.NewServer())
+	registerMemory(t, router, &fakeMem{})
+	if err := RegisterMemorySkeleton(router, &fakeMem{}); !errors.Is(err, ErrPortRegistered) {
+		t.Fatalf("second memory registration: want ErrPortRegistered, got %v", err)
+	}
+	registerOrchestrator(t, router, &stubOrchestrator{})
+	if err := RegisterOrchestratorSkeleton(router, &stubOrchestrator{}); !errors.Is(err, ErrPortRegistered) {
+		t.Fatalf("second orchestrator registration: want ErrPortRegistered, got %v", err)
+	}
+}
+
 func TestPluginRouterAnswersEverySkeletonRegisteredOnIt(t *testing.T) {
+
 	mem := &fakeMem{}
 	router := NewPluginRouter(grpc.NewServer())
-	RegisterMemorySkeleton(router, mem)
-	RegisterOrchestratorSkeleton(router, &stubOrchestrator{})
+	registerMemory(t, router, mem)
+	registerOrchestrator(t, router, &stubOrchestrator{})
 
 	ctx := context.Background()
 	payload, err := encodeArgs(contracts.Node{Key: "facts/router"})

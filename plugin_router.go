@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -20,17 +21,24 @@ type PluginRouter struct {
 }
 
 // NewPluginRouter registers the Plugin service on server and returns the router that
-// answers it.
+// answers it. Call it once per server: grpc treats a second registration of the
+// Plugin service on the same server as fatal (it logs and exits), so a second router
+// needs a second server.
+
 func NewPluginRouter(server *grpc.Server) *PluginRouter {
 	router := &PluginRouter{ports: make(map[string]pb.PluginServer)}
 	pb.RegisterPluginServer(server, router)
 	return router
 }
 
-func (r *PluginRouter) add(port string, skeleton pb.PluginServer) {
+func (r *PluginRouter) add(port string, skeleton pb.PluginServer) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, registered := r.ports[port]; registered {
+		return fmt.Errorf("%w: %s", ErrPortRegistered, port)
+	}
 	r.ports[port] = skeleton
+	return nil
 }
 
 // Call forwards the envelope to the skeleton registered on its port and reports

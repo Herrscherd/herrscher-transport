@@ -7,6 +7,7 @@ import (
 	"net"
 	"testing"
 
+	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
 )
 
@@ -46,4 +47,18 @@ func mustMarshal(tb testing.TB, value any) []byte {
 		tb.Fatal(err)
 	}
 	return payload
+}
+
+func registerMemory(tb testing.TB, router *PluginRouter, impl contracts.Memory) {
+	tb.Helper()
+	if err := RegisterMemorySkeleton(router, impl); err != nil {
+		tb.Fatalf("register memory skeleton: %v", err)
+	}
+}
+
+func registerOrchestrator(tb testing.TB, router *PluginRouter, impl contracts.Orchestrator) {
+	tb.Helper()
+	if err := RegisterOrchestratorSkeleton(router, impl); err != nil {
+		tb.Fatalf("register orchestrator skeleton: %v", err)
+	}
 }

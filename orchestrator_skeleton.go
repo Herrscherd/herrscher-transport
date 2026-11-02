@@ -26,9 +26,10 @@ type orchestratorServer struct {
 // RegisterOrchestratorSkeleton wires a real Orchestrator behind the generic
 // Plugin service so a remote host can serve the conversation-policy port. The
 // surface is request/response (Context/Observe/Consolidate); the orchestrator
-// holds no streaming turn state, unlike the backend.
-func RegisterOrchestratorSkeleton(r *PluginRouter, impl contracts.Orchestrator) {
-	r.add(PortOrchestrator, &orchestratorServer{real: impl})
+// holds no streaming turn state, unlike the backend. It returns ErrPortRegistered
+// when the orchestrator port is already registered on r.
+func RegisterOrchestratorSkeleton(r *PluginRouter, impl contracts.Orchestrator) error {
+	return r.add(PortOrchestrator, &orchestratorServer{real: impl})
 }
 
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {

@@ -65,7 +65,7 @@ func (b *budgetMem) Record(_ context.Context, n contracts.Node) error {
 func TestTypedErrorSurvivesTheWire(t *testing.T) {
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(NewPluginRouter(s), &budgetMem{})
+	registerMemory(t, NewPluginRouter(s), &budgetMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
@@ -115,8 +115,8 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	mem := &fakeMem{}
 	orch := &stubOrchestrator{}
 	router := NewPluginRouter(s)
-	RegisterMemorySkeleton(router, mem)
-	RegisterOrchestratorSkeleton(router, orch)
+	registerMemory(t, router, mem)
+	registerOrchestrator(t, router, orch)
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 

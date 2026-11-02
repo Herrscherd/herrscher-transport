@@ -25,9 +25,10 @@ type memoryServer struct {
 	real contracts.Memory
 }
 
-// RegisterMemorySkeleton wires a real Memory object behind the generic service.
-func RegisterMemorySkeleton(r *PluginRouter, impl contracts.Memory) {
-	r.add(PortMemory, &memoryServer{real: impl})
+// RegisterMemorySkeleton wires a real Memory object behind the generic service. It
+// returns ErrPortRegistered when the memory port is already registered on r.
+func RegisterMemorySkeleton(r *PluginRouter, impl contracts.Memory) error {
+	return r.add(PortMemory, &memoryServer{real: impl})
 }
 
 func fail(err error) (*pb.ResultEnvelope, error) {
