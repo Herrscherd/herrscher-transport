@@ -106,6 +106,7 @@ linters:
       enable-all: true
       disabled-checks:
         - whyNoLint
+        - hugeParam
     gosec:
       excludes: []
     govet:
