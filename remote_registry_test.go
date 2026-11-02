@@ -68,3 +68,45 @@ func TestDialConnAllowsPlaintextLoopback(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveDropsUnqueryableAnnouncements(t *testing.T) {
+	cases := []struct {
+		name string
+		ann  Announcement
+	}{
+		{name: "empty instance id", ann: Announcement{
+			Manifest: contracts.Manifest{Category: contracts.CategoryMemory}, GrpcAddr: "127.0.0.1:9001",
+		}},
+		{name: "empty category", ann: Announcement{
+			InstanceID: "a", GrpcAddr: "127.0.0.1:9001",
+		}},
+		{name: "port only address", ann: memAnnounce("a", ":50051")},
+		{name: "host only address", ann: memAnnounce("a", "127.0.0.1:")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRemoteRegistry()
+			r.Observe(tc.ann)
+			r.mu.RLock()
+			n := len(r.entries)
+			r.mu.RUnlock()
+			if n != 0 {
+				t.Fatalf("want announcement dropped, registry holds %d entries", n)
+			}
+		})
+	}
+}
+
+func TestObserveKeepsDistinctInstancesWithoutCollapsing(t *testing.T) {
+	r := NewRemoteRegistry()
+	r.Observe(memAnnounce("", "127.0.0.1:9001"))
+	r.Observe(memAnnounce("", "127.0.0.1:9002"))
+	if got := r.Memories(); len(got) != 0 {
+		t.Fatalf("want identity-less announcements dropped, got %+v", got)
+	}
+	r.Observe(memAnnounce("a", "127.0.0.1:9001"))
+	r.Observe(memAnnounce("b", "127.0.0.1:9002"))
+	if got := r.Memories(); len(got) != 2 {
+		t.Fatalf("want both identified plugins visible, got %+v", got)
+	}
+}

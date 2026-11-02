@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -163,5 +164,41 @@ func TestBackendRespondHandlerRefusesServerWithoutRespond(t *testing.T) {
 	if err := backendRespondHandler(struct{}{}, recvNilStream{}); !errors.Is(err, errBackendStreamNotResponder) {
 		t.Fatalf("a server without respond must be refused with errBackendStreamNotResponder, got %v", err)
 
+	}
+}
+
+type concurrentBackend struct{ events int }
+
+func (b *concurrentBackend) Respond(_ context.Context, _ contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
+	var wg sync.WaitGroup
+	for range b.events {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			onEvent(contracts.BackendEvent{Kind: "text", Detail: "chunk"})
+		}()
+	}
+	wg.Wait()
+	return "done", nil
+}
+func (b *concurrentBackend) Close() error { return nil }
+
+func TestBackendSkeletonToleratesConcurrentOnEvent(t *testing.T) {
+	proxy, s, conn := serveBackend(t, func(s *grpc.Server) {
+		RegisterBackendSkeleton(s, &concurrentBackend{events: 32})
+	})
+	t.Cleanup(s.Stop)
+	t.Cleanup(func() { closeOrFail(t, conn) })
+
+	var seen int
+	reply, err := proxy.Respond(context.Background(), contracts.Prompt{Content: "hi"}, func(contracts.BackendEvent) { seen++ })
+	if err != nil {
+		t.Fatalf("respond: %v", err)
+	}
+	if reply != "done" {
+		t.Fatalf("reply = %q", reply)
+	}
+	if seen != 32 {
+		t.Fatalf("want 32 events forwarded, got %d", seen)
 	}
 }

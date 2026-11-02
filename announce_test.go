@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -62,4 +63,20 @@ func TestWatchAnnouncementsRefusesNilHook(t *testing.T) {
 	if err := WatchAnnouncements(nc, func(Announcement) {}, nil); !errors.Is(err, ErrNilHook) {
 		t.Fatalf("nil decode hook: want ErrNilHook, got %v", err)
 	}
+}
+
+func TestWatchAnnouncementsReportsDecodeErrors(t *testing.T) {
+	nc := runNATS(t)
+	failures := make(chan error, 1)
+	if err := WatchAnnouncements(nc, func(Announcement) {}, func(err error) { failures <- err }); err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+	if err := nc.Publish(SubjectAnnounce, []byte("{not json")); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	err := <-failures
+	if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 }

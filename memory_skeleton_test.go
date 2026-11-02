@@ -64,3 +64,17 @@ func TestMemorySkeletonUnlink(t *testing.T) {
 		t.Fatalf("Unlink not dispatched, got %+v", fake.unlinked)
 	}
 }
+
+func TestMemorySkeletonRejectsShortArgTuple(t *testing.T) {
+	fake := &fakeMem{}
+	srv := &memoryServer{real: fake}
+	args := mustMarshal(t, []any{"facts/x"})
+	res, err := srv.Call(context.Background(),
+		&pb.MethodEnvelope{Port: PortMemory, Method: "Recall", JsonPayload: args})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if res.Error == "" {
+		t.Fatal("want a short Recall tuple rejected, got a silent depth-0 recall")
+	}
+}
