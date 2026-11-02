@@ -133,8 +133,8 @@ func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportC
 }
 
 // DialOrchestrator builds a contracts.Orchestrator proxy over the entry's gRPC
-// address — the request/response sibling of DialMemory (the orchestrator holds
-// no per-turn stream state, so the same generic Plugin service carries it).
+// address. It is the request/response sibling of DialMemory: the orchestrator holds
+// no per-turn stream state, so the same generic Plugin service carries it.
 func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Orchestrator, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {

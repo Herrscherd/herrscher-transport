@@ -60,7 +60,7 @@ func TestMemoryProxyRoundTrip(t *testing.T) {
 
 // TestProxyCloseKeepsSharedRealAndPeersAlive guards the plugin-host topology:
 // one server (one real Memory) behind two client connections. Closing one proxy
-// must release only its own connection — it must not close the shared real, and
+// must release only its own connection; it must not close the shared real, and
 // the other proxy must stay usable.
 func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
 	fake := &fakeMem{}

@@ -74,7 +74,7 @@ func TestOrchestratorProxyRoundTrip(t *testing.T) {
 }
 
 // TestOrchestratorProxyContextDegradesOnTransportError pins the port contract:
-// Context must never surface a turn-breaking error — a broken transport yields "".
+// Context must never surface a turn-breaking error: a broken transport yields "".
 func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 	proxy, s, conn := serveOrch(t, &fakeOrch{ctxOut: "ctx"})
 

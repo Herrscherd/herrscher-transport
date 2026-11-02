@@ -65,8 +65,8 @@ func (p *OrchestratorProxy) Consolidate(ctx context.Context) error {
 
 // Close releases the client-side gRPC connection only. Unlike Memory (shared
 // across clients by the plugin-host), an Orchestrator is session-scoped, so
-// tearing down the remote object is the owning host's job at session shutdown —
-// not something a closing proxy should trigger over the wire.
+// tearing down the remote object is the owning host's job at session shutdown, not
+// something a closing proxy should trigger over the wire.
 func (p *OrchestratorProxy) Close() error {
 	if p.dialed != nil {
 		return p.dialed.Close()

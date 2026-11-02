@@ -139,8 +139,8 @@ func NewBackendProxy(cc grpc.ClientConnInterface) *BackendProxy { return &Backen
 
 // Respond runs one turn on the remote backend: it opens the stream, forwards the
 // prompt, replays each event through onEvent in order, and returns the reply at
-// the terminal Done frame. A stream that ends before the Done frame — a remote
-// crash or a dropped connection mid-turn — surfaces as an error so the host's
+// the terminal Done frame. A stream that ends before the Done frame (a remote
+// crash or a dropped connection mid-turn) surfaces as an error so the host's
 // turn loop abandons the in-flight turn (the hangup path), never hanging.
 func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	payload, err := encodeArgs(prompt)

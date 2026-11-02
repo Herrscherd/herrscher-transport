@@ -11,7 +11,7 @@ import (
 
 // TLSConfig points at the PEM files that secure off-loopback transport: a CA to
 // verify the peer, plus this host's own certificate and key (presented to the
-// peer for mutual TLS). All three empty means plaintext — the single-host
+// peer for mutual TLS). All three empty means plaintext: the single-host
 // loopback default. Any subset is a half-configuration and is rejected
 // (fail-closed) rather than silently serving plaintext.
 type TLSConfig struct {
@@ -27,7 +27,7 @@ func (c TLSConfig) Enabled() bool {
 
 // Validate fails closed: plaintext (nothing set) is valid and full mTLS (all
 // three set) is valid, but any partial configuration is an error naming the
-// missing pieces — so a typo can never downgrade an intended-secure link to
+// missing pieces, so a typo can never downgrade an intended-secure link to
 // plaintext.
 func (c TLSConfig) Validate() error {
 	if !c.Enabled() {
