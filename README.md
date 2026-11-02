@@ -47,10 +47,12 @@ on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`.
 NATS core pub-sub has no replay, so the publisher is expected to re-announce
 periodically. This module only publishes what it is told to.
 
-The announce bus is unauthenticated, so both trust decisions fail closed.
+The announce bus is unauthenticated. Without `WithAddrAllow`, `RemoteRegistry`
+accepts any well formed announcement, so any process that can reach the bus, a
+local one included, can announce itself and take over a category.
 `NewRemoteRegistry(WithAddrAllow(fn))` drops announcements whose address the
-allowlist rejects, and dialing with `nil` credentials is refused for any
-non-loopback address.
+allowlist rejects. Dialing with `nil` credentials is refused for any non-loopback
+address.
 
 `TLSConfig` requires CA, cert and key together, which is mutual TLS. Any partial
 set is an error rather than a silent downgrade to plaintext.

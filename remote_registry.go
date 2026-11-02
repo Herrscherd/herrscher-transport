@@ -43,6 +43,8 @@ func WithAddrAllow(allow func(addr string) bool) RegistryOption {
 }
 
 // NewRemoteRegistry returns an empty registry of remote plugin instances.
+// Without WithAddrAllow the registry accepts any well formed announcement, so a
+// local process can announce itself and take over a category.
 func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
 	registry := &RemoteRegistry{entries: make(map[string]RemoteEntry)}
 	for _, o := range opts {
