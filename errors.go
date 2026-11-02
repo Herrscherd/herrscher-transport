@@ -12,6 +12,9 @@ var ErrInvalidFrame = errors.New("transport: invalid frame (neither event nor do
 // ErrTLSNotConfigured is returned when TLS is required but no TLS configuration is set.
 var ErrTLSNotConfigured = errors.New("transport: TLS not configured")
 
+var ErrNilHook = errors.New("transport: nil announcement hook")
+
+
 // UnknownPortError reports a request addressed to a port that no service serves.
 type UnknownPortError struct {
 	Port string

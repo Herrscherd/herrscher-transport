@@ -42,7 +42,8 @@ the gRPC error instead.
 ## Discovery and trust
 
 A plugin publishes an `Announcement` (its manifest, gRPC address and instance id)
-on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`.
+on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`; its decode-error hook is required.
+
 
 NATS core pub-sub has no replay, so the publisher is expected to re-announce
 periodically. This module only publishes what it is told to.

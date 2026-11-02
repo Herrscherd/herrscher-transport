@@ -231,7 +231,7 @@ func TestObserveKeepsDistinctInstancesWithoutCollapsing(t *testing.T) {
 func TestWatchAnnouncementsReportsDecodeErrors(t *testing.T) {
 	nc := runNATS(t)
 	failures := make(chan error, 1)
-	if err := WatchAnnouncementsFunc(nc, func(Announcement) {}, func(err error) { failures <- err }); err != nil {
+	if err := WatchAnnouncements(nc, func(Announcement) {}, func(err error) { failures <- err }); err != nil {
 		t.Fatalf("watch: %v", err)
 	}
 	if err := nc.Publish(SubjectAnnounce, []byte("{not json")); err != nil {

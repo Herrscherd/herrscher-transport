@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -33,7 +33,8 @@ func runNATS(t *testing.T) *nats.Conn {
 func TestAnnounceWatch(t *testing.T) {
 	nc := runNATS(t)
 	got := make(chan Announcement, 1)
-	if err := WatchAnnouncements(nc, func(a Announcement) { got <- a }); err != nil {
+	if err := WatchAnnouncements(nc, func(a Announcement) { got <- a }, func(error) {}); err != nil {
+
 		t.Fatalf("watch: %v", err)
 	}
 	ann := Announcement{
@@ -52,5 +53,15 @@ func TestAnnounceWatch(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no announcement received")
 	}
-	_ = context.Background()
 }
+
+func TestWatchAnnouncementsRefusesNilHook(t *testing.T) {
+	nc := runNATS(t)
+	if err := WatchAnnouncements(nc, nil, func(error) {}); !errors.Is(err, ErrNilHook) {
+		t.Fatalf("nil announcement hook: want ErrNilHook, got %v", err)
+	}
+	if err := WatchAnnouncements(nc, func(Announcement) {}, nil); !errors.Is(err, ErrNilHook) {
+		t.Fatalf("nil decode hook: want ErrNilHook, got %v", err)
+	}
+}
+

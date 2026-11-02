@@ -34,24 +34,18 @@ func Announce(conn *nats.Conn, ann Announcement) error {
 	return nil
 }
 
-// WatchAnnouncements invokes fn for every Announcement seen on SubjectAnnounce.
-// It returns the NATS subscribe error and has no sentinel or typed error; decode
-// failures are dropped silently.
-func WatchAnnouncements(nc *nats.Conn, fn func(Announcement)) error {
-	return WatchAnnouncementsFunc(nc, fn, nil)
-}
-
-// WatchAnnouncementsFunc invokes onAnnouncement for every Announcement seen on
-// SubjectAnnounce and passes each decode failure to onErr. A nil onErr drops
-// the failures silently. It returns the NATS subscribe error; it has no sentinel
-// or typed error.
-func WatchAnnouncementsFunc(nc *nats.Conn, onAnnouncement func(Announcement), onErr func(error)) error {
+// WatchAnnouncements invokes onAnnouncement for every Announcement seen on
+// SubjectAnnounce and passes each decode failure to onDecodeErr. Both hooks are
+// required: a nil hook is refused with ErrNilHook before any subscription is made.
+// It returns the NATS subscribe error.
+func WatchAnnouncements(nc *nats.Conn, onAnnouncement func(Announcement), onDecodeErr func(error)) error {
+	if onAnnouncement == nil || onDecodeErr == nil {
+		return ErrNilHook
+	}
 	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement
 		if err := Unmarshal(msg.Data, &ann); err != nil {
-			if onErr != nil {
-				onErr(fmt.Errorf("transport: decode announcement: %w", err))
-			}
+			onDecodeErr(fmt.Errorf("transport: decode announcement: %w", err))
 			return
 		}
 		onAnnouncement(ann)
