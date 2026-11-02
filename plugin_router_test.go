@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,6 +21,39 @@ func TestNewPluginRouterRefusesASecondPluginServiceOnAServer(t *testing.T) {
 	newRouter(t, server)
 	if _, err := NewPluginRouter(server); !errors.Is(err, ErrPluginServiceRegistered) {
 		t.Fatalf("second Plugin service on one server: want ErrPluginServiceRegistered, got %v", err)
+	}
+}
+
+func TestConcurrentNewPluginRouterOnOneServerAdmitsOneCaller(t *testing.T) {
+	server := grpc.NewServer()
+	const callers = 16
+	start := make(chan struct{})
+	outcomes := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Go(func() {
+			<-start
+			_, err := NewPluginRouter(server)
+			outcomes <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(outcomes)
+
+	var admitted, refused int
+	for err := range outcomes {
+		switch {
+		case err == nil:
+			admitted++
+		case errors.Is(err, ErrPluginServiceRegistered):
+			refused++
+		default:
+			t.Errorf("concurrent NewPluginRouter: unexpected error %v", err)
+		}
+	}
+	if admitted != 1 || refused != callers-1 {
+		t.Fatalf("concurrent NewPluginRouter on one server: want 1 admitted and %d refused, got %d and %d", callers-1, admitted, refused)
 	}
 }
 
