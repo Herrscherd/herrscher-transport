@@ -87,7 +87,9 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 		err = generate(ctx, cfg, stderr)
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
+			err = errors.Join(err, writeErr)
+		}
 	}
 	return exitCode(err)
 }
@@ -144,7 +146,7 @@ func generate(ctx context.Context, cfg config, stderr io.Writer) error {
 	return writeFiles(cfg.goOut, files)
 }
 
-func compileRequest(ctx context.Context, root string, protoPath string) (*pluginpb.CodeGeneratorRequest, error) {
+func compileRequest(ctx context.Context, root, protoPath string) (*pluginpb.CodeGeneratorRequest, error) {
 	if _, err := os.ReadFile(filepath.Join(root, protoPath)); err != nil {
 		return nil, fmt.Errorf("%w: %w", errUnreadable, err)
 	}

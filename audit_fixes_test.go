@@ -46,7 +46,7 @@ func TestDecodeArgsRejectsArityMismatch(t *testing.T) {
 func TestMemorySkeletonRejectsShortArgTuple(t *testing.T) {
 	fake := &fakeMem{}
 	srv := &memoryServer{real: fake}
-	args, _ := Marshal([]any{"facts/x"})
+	args := mustMarshal(t, []any{"facts/x"})
 	res, err := srv.Call(context.Background(),
 		&pb.MethodEnvelope{Port: PortMemory, Method: "Recall", JsonPayload: args})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestTypedErrorSurvivesTheWire(t *testing.T) {
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
 	RegisterMemorySkeleton(s, &budgetMem{})
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	conn, err := grpc.NewClient("passthrough:///bufnet",
@@ -76,7 +76,7 @@ func TestTypedErrorSurvivesTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	err = NewMemoryProxy(pb.NewPluginClient(conn)).Record(context.Background(), contracts.Node{Key: "facts/x"})
 	var budget *contracts.BudgetError
@@ -89,7 +89,10 @@ func TestTypedErrorSurvivesTheWire(t *testing.T) {
 }
 
 func TestUntypedErrorKeepsFlatMessage(t *testing.T) {
-	res, _ := fail(errors.New("transport: unknown port \"nope\""))
+	res, err := fail(errors.New("transport: unknown port \"nope\""))
+	if err != nil {
+		t.Fatal(err)
+	}
 	got := decodeWireError(res.JsonPayload, res.Error)
 	if got.Error() != "transport: unknown port \"nope\"" {
 		t.Fatalf("flat message lost: %v", got)
@@ -113,7 +116,7 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	orch := &stubOrchestrator{}
 	RegisterMemorySkeleton(s, mem)
 	RegisterOrchestratorSkeleton(s, orch)
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	conn, err := grpc.NewClient("passthrough:///bufnet",
@@ -122,7 +125,7 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 	client := pb.NewPluginClient(conn)
 
 	if err := NewMemoryProxy(client).Record(context.Background(), contracts.Node{Key: "facts/x"}); err != nil {
@@ -164,7 +167,7 @@ func TestBackendSkeletonToleratesConcurrentOnEvent(t *testing.T) {
 		RegisterBackendSkeleton(s, &concurrentBackend{events: 32})
 	})
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var seen int
 	reply, err := proxy.Respond(context.Background(), contracts.Prompt{Content: "hi"}, func(contracts.BackendEvent) { seen++ })

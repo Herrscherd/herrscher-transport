@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
@@ -14,16 +13,16 @@ import (
 )
 
 func TestProxyErrorsWhenPeerDown(t *testing.T) {
-	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	lis := listenLoopback(t)
 	s := grpc.NewServer()
 	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer closeOrFail(t, conn)
 	proxy := NewMemoryProxy(pb.NewPluginClient(conn))
 
 	s.Stop()
@@ -35,10 +34,10 @@ func TestProxyErrorsWhenPeerDown(t *testing.T) {
 }
 
 func TestDialMemoryCloseReleasesConn(t *testing.T) {
-	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	lis := listenLoopback(t)
 	s := grpc.NewServer()
 	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	mem, err := DialMemory(context.Background(), RemoteEntry{GrpcAddr: lis.Addr().String()}, nil)

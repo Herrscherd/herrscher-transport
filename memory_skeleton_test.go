@@ -34,7 +34,7 @@ func (f *fakeMem) Close() error { f.closed++; return nil }
 func TestMemorySkeletonRecord(t *testing.T) {
 	fake := &fakeMem{}
 	srv := &memoryServer{real: fake}
-	args, _ := Marshal([]any{contracts.Node{Key: "sessions/x", Title: "X"}})
+	args := mustMarshal(t, []any{contracts.Node{Key: "sessions/x", Title: "X"}})
 	res, err := srv.Call(context.Background(),
 		&pb.MethodEnvelope{Port: "memory", Method: "Record", JsonPayload: args})
 	if err != nil {
@@ -51,7 +51,7 @@ func TestMemorySkeletonRecord(t *testing.T) {
 func TestMemorySkeletonUnlink(t *testing.T) {
 	fake := &fakeMem{}
 	srv := &memoryServer{real: fake}
-	args, _ := Marshal([]any{"facts/x", "facts/umbrella"})
+	args := mustMarshal(t, []any{"facts/x", "facts/umbrella"})
 	res, err := srv.Call(context.Background(),
 		&pb.MethodEnvelope{Port: "memory", Method: "Unlink", JsonPayload: args})
 	if err != nil {

@@ -70,7 +70,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
 	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	cc, err := clientTLS.ClientCredentials()
@@ -83,7 +83,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer mem.Close()
+	defer closeOrFail(t, mem)
 	if err := mem.Record(ctx, contracts.Node{Key: "k"}); err != nil {
 		t.Fatalf("mTLS Record should succeed, got %v", err)
 	}
@@ -103,7 +103,7 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
 	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	// A client dialing plaintext (nil creds) against a mTLS server must be
@@ -115,7 +115,7 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	if err != nil {
 		return // dial itself refused — acceptable rejection
 	}
-	defer mem.Close()
+	defer closeOrFail(t, mem)
 	if err := mem.Record(ctx, contracts.Node{Key: "k"}); err == nil {
 		t.Fatal("a plaintext client must be rejected by the mTLS server, got a successful Record")
 	}
@@ -190,7 +190,7 @@ func writePEM(t *testing.T, path, blockType string, der []byte) {
 	if err != nil {
 		t.Fatalf("create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeOrFail(t, f)
 	if err := pem.Encode(f, &pem.Block{Type: blockType, Bytes: der}); err != nil {
 		t.Fatalf("encode %s: %v", path, err)
 	}

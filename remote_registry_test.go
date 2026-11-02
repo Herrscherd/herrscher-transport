@@ -64,6 +64,8 @@ func TestDialConnAllowsPlaintextLoopback(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loopback %q rejected: %v", addr, err)
 		}
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

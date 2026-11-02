@@ -52,8 +52,14 @@ func backendRespondHandler(srv any, stream grpc.ServerStream) error {
 	if err := stream.RecvMsg(req); err != nil {
 		return err
 	}
-	return srv.(backendStreamSrv).respond(req, stream)
+	handler, ok := srv.(backendStreamSrv)
+	if !ok {
+		return errBackendStreamNotResponder
+	}
+	return handler.respond(req, stream)
 }
+
+var errBackendStreamNotResponder = errors.New("backend stream: server does not respond")
 
 // backendStreamServiceDesc is the hand-authored equivalent of a protoc-generated
 // ServiceDesc for a single server-streaming RPC. gRPC registers and dispatches

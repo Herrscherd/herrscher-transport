@@ -42,7 +42,7 @@ func serveBackend(t *testing.T, register func(*grpc.Server)) (*BackendProxy, *gr
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
 	register(s)
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -63,7 +63,7 @@ func TestBackendStreamRoundTripsEventsThenReply(t *testing.T) {
 	fake := &fakeBackend{events: want, reply: "final"}
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) { RegisterBackendSkeleton(s, fake) })
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got []contracts.BackendEvent
 	reply, err := proxy.Respond(context.Background(),
@@ -95,7 +95,7 @@ func TestBackendStreamSurfacesRespondError(t *testing.T) {
 	}
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) { RegisterBackendSkeleton(s, fake) })
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got int
 	_, err := proxy.Respond(context.Background(), contracts.Prompt{},
@@ -128,7 +128,7 @@ func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {
 		s.RegisterService(&backendStreamServiceDesc, droppingServer{})
 	})
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got int
 	reply, err := proxy.Respond(context.Background(), contracts.Prompt{},
@@ -157,5 +157,15 @@ func TestBackendProxyCloseReleasesConnOnly(t *testing.T) {
 	}
 	if fake.closed != 0 {
 		t.Fatalf("proxy Close must not close the remote backend; closed=%d", fake.closed)
+	}
+}
+
+type recvNilStream struct{ grpc.ServerStream }
+
+func (recvNilStream) RecvMsg(any) error { return nil }
+
+func TestBackendRespondHandlerRefusesServerWithoutRespond(t *testing.T) {
+	if err := backendRespondHandler(struct{}{}, recvNilStream{}); err == nil {
+		t.Fatal("a server without respond must be refused with an error, got nil")
 	}
 }

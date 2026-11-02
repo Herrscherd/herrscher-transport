@@ -39,7 +39,7 @@ func serveOrch(t *testing.T, real contracts.Orchestrator) (*OrchestratorProxy, *
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
 	RegisterOrchestratorSkeleton(s, real)
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -55,7 +55,7 @@ func TestOrchestratorProxyRoundTrip(t *testing.T) {
 	fake := &fakeOrch{ctxOut: "prior context"}
 	proxy, s, conn := serveOrch(t, fake)
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	if got := proxy.Context(context.Background()); got != "prior context" {
 		t.Fatalf("Context round-trip wrong: %q", got)
@@ -86,7 +86,9 @@ func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 	}
 	// Break the transport; Context must degrade to "" rather than error out.
 	s.Stop()
-	_ = conn.Close()
+	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if got := proxy.Context(context.Background()); got != "" {
 		t.Fatalf("Context must degrade to empty on transport failure, got %q", got)
 	}
@@ -97,7 +99,7 @@ func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 func TestOrchestratorProxyObserveSurfacesError(t *testing.T) {
 	proxy, s, conn := serveOrch(t, &fakeOrch{observeErr: errors.New("boom")})
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	if err := proxy.Observe(context.Background(), contracts.Prompt{}, "r"); err == nil {
 		t.Fatal("expected Observe to surface the remote error")
