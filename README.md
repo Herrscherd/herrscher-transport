@@ -44,7 +44,9 @@ transport.RegisterBackendSkeleton(s, backend)
 ```
 
 `NewPluginRouter` returns `ErrPluginServiceRegistered` when the server already
-serves the Plugin service, so call it once per server. `RegisterMemorySkeleton`
+has a router, so call it once per server, before `Serve`. After `Serve`, grpc
+exits the process on the registration instead of returning an error.
+`RegisterMemorySkeleton`
 and `RegisterOrchestratorSkeleton` return `ErrPortRegistered` when their port is
 already registered on the router. `DialMemory(ctx, entry, creds)` returns a
 `contracts.Memory` proxy that owns its connection and releases it on `Close`.
