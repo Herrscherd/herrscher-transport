@@ -51,6 +51,7 @@ func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
 	return r
 }
 
+// Observe records the remote plugin instance that announcement a describes. It ignores an announcement without an instance id or a category, one whose gRPC address is not host:port, and one whose address the allowlist refuses.
 func (r *RemoteRegistry) Observe(a Announcement) {
 	if a.InstanceID == "" || a.Manifest.Category == "" {
 		return

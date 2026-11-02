@@ -25,6 +25,7 @@ func RegisterOrchestratorSkeleton(r *PluginRouter, impl contracts.Orchestrator) 
 	r.add(PortOrchestrator, &orchestratorServer{real: impl})
 }
 
+// Call runs the orchestrator method named by env against the wrapped Orchestrator and returns its encoded result, or the encoded error.
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	if env.Port != PortOrchestrator {
 		return fail(&UnknownPortError{Port: env.Port})
