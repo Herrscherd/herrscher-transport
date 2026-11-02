@@ -155,7 +155,7 @@ func genCertPair(t *testing.T) string {
 	}
 	writePEM(t, filepath.Join(dir, "ca.pem"), "CERTIFICATE", caDER)
 
-	leaf := func(name string, eku []x509.ExtKeyUsage, ips []net.IP) (string, string) {
+	leaf := func(name string, eku []x509.ExtKeyUsage, ips []net.IP) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			t.Fatalf("%s key: %v", name, err)
@@ -181,7 +181,6 @@ func genCertPair(t *testing.T) string {
 			t.Fatalf("%s marshal key: %v", name, err)
 		}
 		writePEM(t, keyPath, "EC PRIVATE KEY", keyDER)
-		return certPath, keyPath
 	}
 
 	leaf("server", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, []net.IP{net.ParseIP("127.0.0.1")})
