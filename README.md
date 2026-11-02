@@ -28,10 +28,21 @@ NATS as an already-connected `*nats.Conn`.
 
 ## Proxy and skeleton
 
-Each port has a symmetric pair. `RegisterMemorySkeleton(s, real)`, and its
-`Orchestrator` and `Backend` equivalents, put a real port object behind the gRPC
-service. `DialMemory(ctx, entry, creds)` returns a `contracts.Memory` proxy that
-owns its connection and releases it on `Close`.
+Each port has a symmetric pair. Memory and orchestrator share the generic `Plugin`
+service, served by one `*PluginRouter` per gRPC server. Backend has its own
+streaming service and registers on the `*grpc.Server` directly:
+
+```go
+router := transport.NewPluginRouter(s)
+err := transport.RegisterMemorySkeleton(router, real)
+transport.RegisterBackendSkeleton(s, backend)
+```
+
+`RegisterMemorySkeleton` and `RegisterOrchestratorSkeleton` return
+`ErrPortRegistered` when their port is already registered on the router. Call
+`NewPluginRouter` once per server. `DialMemory(ctx, entry, creds)` returns a
+`contracts.Memory` proxy that owns its connection and releases it on `Close`.
+
 
 Adding a method never touches the `.proto`. The method name and a JSON argument
 tuple ride inside `MethodEnvelope`.
