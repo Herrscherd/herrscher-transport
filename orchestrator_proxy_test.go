@@ -34,11 +34,11 @@ func (f *fakeOrch) Close() error                      { f.closed++; return nil }
 
 // serveOrch stands up the orchestrator skeleton over an in-memory gRPC link and
 // returns a proxy plus the server/conn so a test can break the transport.
-func serveOrch(t *testing.T, real contracts.Orchestrator) (*OrchestratorProxy, *grpc.Server, *grpc.ClientConn) {
+func serveOrch(t *testing.T, impl contracts.Orchestrator) (*OrchestratorProxy, *grpc.Server, *grpc.ClientConn) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterOrchestratorSkeleton(NewPluginRouter(s), real)
+	RegisterOrchestratorSkeleton(NewPluginRouter(s), impl)
 	serveInBackground(t, s, lis)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),

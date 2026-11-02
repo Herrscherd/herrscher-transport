@@ -13,11 +13,11 @@ import (
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
-func dialSkeleton(t *testing.T, real contracts.Memory) pb.PluginClient {
+func dialSkeleton(t *testing.T, impl contracts.Memory) pb.PluginClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(NewPluginRouter(s), real)
+	RegisterMemorySkeleton(NewPluginRouter(s), impl)
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
