@@ -38,14 +38,14 @@ func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (
 		}
 		return &pb.ResultEnvelope{JsonPayload: out}, nil
 	case "Observe":
-		var a struct {
+		var args struct {
 			Prompt contracts.Prompt
 			Reply  string
 		}
-		if err := decodeArgs(env.JsonPayload, &a.Prompt, &a.Reply); err != nil {
+		if err := decodeArgs(env.JsonPayload, &args.Prompt, &args.Reply); err != nil {
 			return fail(err)
 		}
-		if err := o.real.Observe(ctx, a.Prompt, a.Reply); err != nil {
+		if err := o.real.Observe(ctx, args.Prompt, args.Reply); err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil

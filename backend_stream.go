@@ -82,9 +82,9 @@ type backendServer struct{ real contracts.Backend }
 // RegisterBackendSkeleton wires a real Backend behind the streaming service so a
 // remote host can serve the model edge. The skeleton forwards every onEvent as a
 // frame and closes the stream with the terminal reply frame.
-func RegisterBackendSkeleton(s *grpc.Server, impl contracts.Backend) {
+func RegisterBackendSkeleton(server *grpc.Server, impl contracts.Backend) {
 	desc := backendStreamServiceDesc()
-	s.RegisterService(&desc, &backendServer{real: impl})
+	server.RegisterService(&desc, &backendServer{real: impl})
 }
 
 func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream) error {
@@ -99,17 +99,17 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 	// onEvent forwards each mid-turn event as its own frame, preserving order.
 	// A send failure (the client hung up) is latched so later events are dropped
 	var (
-		mu      sync.Mutex
-		sendErr error
-		closed  bool
+		sendLock sync.Mutex
+		sendErr  error
+		closed   bool
 	)
-	onEvent := func(e contracts.BackendEvent) {
-		mu.Lock()
-		defer mu.Unlock()
+	onEvent := func(event contracts.BackendEvent) {
+		sendLock.Lock()
+		defer sendLock.Unlock()
 		if closed || sendErr != nil {
 			return
 		}
-		ev := e
+		ev := event
 		payload, err := Marshal(backendFrame{Event: &ev})
 		if err != nil {
 			sendErr = err
@@ -121,10 +121,10 @@ func (s *backendServer) respond(req *pb.MethodEnvelope, stream grpc.ServerStream
 	}
 
 	reply, respErr := s.real.Respond(stream.Context(), prompt, onEvent)
-	mu.Lock()
+	sendLock.Lock()
 	closed = true
 	streamErr := sendErr
-	mu.Unlock()
+	sendLock.Unlock()
 	if streamErr != nil {
 		return fmt.Errorf("transport: backend event stream: %w", streamErr)
 	}
@@ -168,13 +168,13 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 	// cancelCtx registered on the long-lived, session-spanning parent ctx.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cs, err := openRespondStream(ctx, p.cc, payload)
+	respondStream, err := openRespondStream(ctx, p.cc, payload)
 	if err != nil {
 		return "", err
 	}
 	for {
 		frame := new(pb.ResultEnvelope)
-		if err := cs.RecvMsg(frame); err != nil {
+		if err := respondStream.RecvMsg(frame); err != nil {
 			return "", receiveFailure(err)
 		}
 		if outcome := applyBackendFrame(frame, onEvent); outcome.terminal {
@@ -184,17 +184,17 @@ func (p *BackendProxy) Respond(ctx context.Context, prompt contracts.Prompt, onE
 }
 
 func openRespondStream(ctx context.Context, cc grpc.ClientConnInterface, payload []byte) (grpc.ClientStream, error) {
-	cs, err := cc.NewStream(ctx, &grpc.StreamDesc{StreamName: respondMethod, ServerStreams: true}, backendRespondFullMethod)
+	stream, err := cc.NewStream(ctx, &grpc.StreamDesc{StreamName: respondMethod, ServerStreams: true}, backendRespondFullMethod)
 	if err != nil {
 		return nil, fmt.Errorf("backend: open stream: %w", err)
 	}
-	if err := cs.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: respondMethod, JsonPayload: payload}); err != nil {
+	if err := stream.SendMsg(&pb.MethodEnvelope{Port: PortBackend, Method: respondMethod, JsonPayload: payload}); err != nil {
 		return nil, fmt.Errorf("backend: send prompt: %w", err)
 	}
-	if err := cs.CloseSend(); err != nil {
+	if err := stream.CloseSend(); err != nil {
 		return nil, fmt.Errorf("backend: close send: %w", err)
 	}
-	return cs, nil
+	return stream, nil
 }
 
 func receiveFailure(err error) error {
@@ -211,26 +211,26 @@ type frameOutcome struct {
 }
 
 func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEvent)) frameOutcome {
-	var f backendFrame
-	if err := Unmarshal(frame.JsonPayload, &f); err != nil {
+	var decoded backendFrame
+	if err := Unmarshal(frame.JsonPayload, &decoded); err != nil {
 		return frameOutcome{terminal: true, err: fmt.Errorf("backend: decode frame: %w", err)}
 	}
-	if f.Event != nil {
+	if decoded.Event != nil {
 		if onEvent != nil {
-			onEvent(*f.Event)
+			onEvent(*decoded.Event)
 		}
 		return frameOutcome{}
 	}
-	if !f.Done {
+	if !decoded.Done {
 		// A frame that is neither an event nor the terminal Done is a protocol
 		// violation; fail loud rather than silently skipping it and waiting for a
 		// boundary that may never come.
 		return frameOutcome{terminal: true, err: ErrInvalidFrame}
 	}
-	if f.Error != "" {
-		return frameOutcome{reply: f.Reply, terminal: true, err: &remoteError{message: f.Error}}
+	if decoded.Error != "" {
+		return frameOutcome{reply: decoded.Reply, terminal: true, err: &remoteError{message: decoded.Error}}
 	}
-	return frameOutcome{reply: f.Reply, terminal: true}
+	return frameOutcome{reply: decoded.Reply, terminal: true}
 }
 
 // Close releases the client-side gRPC connection only. It never closes the

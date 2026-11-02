@@ -19,28 +19,28 @@ type PluginRouter struct {
 	ports map[string]pb.PluginServer
 }
 
-// NewPluginRouter registers the Plugin service on s and returns the router that
+// NewPluginRouter registers the Plugin service on server and returns the router that
 // answers it.
-func NewPluginRouter(s *grpc.Server) *PluginRouter {
-	r := &PluginRouter{ports: make(map[string]pb.PluginServer)}
-	pb.RegisterPluginServer(s, r)
-	return r
+func NewPluginRouter(server *grpc.Server) *PluginRouter {
+	router := &PluginRouter{ports: make(map[string]pb.PluginServer)}
+	pb.RegisterPluginServer(server, router)
+	return router
 }
 
-func (r *PluginRouter) add(port string, s pb.PluginServer) {
+func (r *PluginRouter) add(port string, skeleton pb.PluginServer) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.ports[port] = s
+	r.ports[port] = skeleton
 }
 
 // Call forwards the envelope to the skeleton registered on its port and reports
 // an unknown port as a wire error.
 func (r *PluginRouter) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	r.mu.RLock()
-	s, ok := r.ports[env.Port]
+	skeleton, ok := r.ports[env.Port]
 	r.mu.RUnlock()
 	if !ok {
 		return fail(&UnknownPortError{Port: env.Port})
 	}
-	return s.Call(ctx, env)
+	return skeleton.Call(ctx, env)
 }

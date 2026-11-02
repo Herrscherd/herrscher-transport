@@ -23,9 +23,9 @@ func decodeArgs(data []byte, dst ...any) error {
 	if len(raw) != len(dst) {
 		return &ArgCountError{Want: len(dst), Got: len(raw)}
 	}
-	for i := range dst {
-		if err := Unmarshal(raw[i], dst[i]); err != nil {
-			return fmt.Errorf("transport: decode arg %d: %w", i, err)
+	for index := range dst {
+		if err := Unmarshal(raw[index], dst[index]); err != nil {
+			return fmt.Errorf("transport: decode arg %d: %w", index, err)
 		}
 	}
 	return nil

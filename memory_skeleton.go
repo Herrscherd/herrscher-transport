@@ -48,14 +48,14 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 }
 
 func (m *memoryServer) recall(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
-	var a struct {
+	var args struct {
 		Key   string
 		Depth int
 	}
-	if err := decodeArgs(env.JsonPayload, &a.Key, &a.Depth); err != nil {
+	if err := decodeArgs(env.JsonPayload, &args.Key, &args.Depth); err != nil {
 		return fail(err)
 	}
-	sub, err := m.real.Recall(ctx, a.Key, a.Depth)
+	sub, err := m.real.Recall(ctx, args.Key, args.Depth)
 	if err != nil {
 		return fail(err)
 	}
@@ -67,22 +67,22 @@ func (m *memoryServer) recall(ctx context.Context, env *pb.MethodEnvelope) (*pb.
 }
 
 func (m *memoryServer) record(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
-	var n contracts.Node
-	if err := decodeArgs(env.JsonPayload, &n); err != nil {
+	var node contracts.Node
+	if err := decodeArgs(env.JsonPayload, &node); err != nil {
 		return fail(err)
 	}
-	if err := m.real.Record(ctx, n); err != nil {
+	if err := m.real.Record(ctx, node); err != nil {
 		return fail(err)
 	}
 	return &pb.ResultEnvelope{}, nil
 }
 
 func (m *memoryServer) search(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
-	var q contracts.Query
-	if err := decodeArgs(env.JsonPayload, &q); err != nil {
+	var query contracts.Query
+	if err := decodeArgs(env.JsonPayload, &query); err != nil {
 		return fail(err)
 	}
-	nodes, err := m.real.Search(ctx, q)
+	nodes, err := m.real.Search(ctx, query)
 	if err != nil {
 		return fail(err)
 	}
@@ -94,22 +94,22 @@ func (m *memoryServer) search(ctx context.Context, env *pb.MethodEnvelope) (*pb.
 }
 
 func (m *memoryServer) links(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
-	var a struct{ From, To, Rel string }
-	if err := decodeArgs(env.JsonPayload, &a.From, &a.To, &a.Rel); err != nil {
+	var args struct{ From, To, Rel string }
+	if err := decodeArgs(env.JsonPayload, &args.From, &args.To, &args.Rel); err != nil {
 		return fail(err)
 	}
-	if err := m.real.Links(ctx, a.From, a.To, a.Rel); err != nil {
+	if err := m.real.Links(ctx, args.From, args.To, args.Rel); err != nil {
 		return fail(err)
 	}
 	return &pb.ResultEnvelope{}, nil
 }
 
 func (m *memoryServer) unlink(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
-	var a struct{ From, To string }
-	if err := decodeArgs(env.JsonPayload, &a.From, &a.To); err != nil {
+	var args struct{ From, To string }
+	if err := decodeArgs(env.JsonPayload, &args.From, &args.To); err != nil {
 		return fail(err)
 	}
-	if err := m.real.Unlink(ctx, a.From, a.To); err != nil {
+	if err := m.real.Unlink(ctx, args.From, args.To); err != nil {
 		return fail(err)
 	}
 	return &pb.ResultEnvelope{}, nil

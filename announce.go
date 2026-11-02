@@ -24,12 +24,12 @@ func (a Announcement) entry() RemoteEntry {
 }
 
 // Announce publishes an Announcement on SubjectAnnounce.
-func Announce(nc *nats.Conn, ann Announcement) error {
-	b, err := Marshal(ann)
+func Announce(conn *nats.Conn, ann Announcement) error {
+	payload, err := Marshal(ann)
 	if err != nil {
 		return fmt.Errorf("transport: marshal announcement: %w", err)
 	}
-	if err := nc.Publish(SubjectAnnounce, b); err != nil {
+	if err := conn.Publish(SubjectAnnounce, payload); err != nil {
 		return fmt.Errorf("transport: publish announcement: %w", err)
 	}
 	return nil
@@ -40,10 +40,10 @@ func WatchAnnouncements(nc *nats.Conn, fn func(Announcement)) error {
 	return WatchAnnouncementsFunc(nc, fn, nil)
 }
 
-// WatchAnnouncementsFunc invokes fn for every Announcement seen on
+// WatchAnnouncementsFunc invokes onAnnouncement for every Announcement seen on
 // SubjectAnnounce and passes each decode failure to onErr. A nil onErr drops
 // the failures silently.
-func WatchAnnouncementsFunc(nc *nats.Conn, fn func(Announcement), onErr func(error)) error {
+func WatchAnnouncementsFunc(nc *nats.Conn, onAnnouncement func(Announcement), onErr func(error)) error {
 	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement
 		if err := Unmarshal(msg.Data, &ann); err != nil {
@@ -52,7 +52,7 @@ func WatchAnnouncementsFunc(nc *nats.Conn, fn func(Announcement), onErr func(err
 			}
 			return
 		}
-		fn(ann)
+		onAnnouncement(ann)
 	})
 	return err
 }

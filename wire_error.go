@@ -34,13 +34,13 @@ func decodeWireError(payload []byte, message string) error {
 	if len(payload) == 0 {
 		return &remoteError{message: message}
 	}
-	var w wireError
-	if err := Unmarshal(payload, &w); err != nil {
+	var wire wireError
+	if err := Unmarshal(payload, &wire); err != nil {
 		return &remoteError{message: message}
 	}
-	if w.Kind == wireErrorKindBudget {
+	if wire.Kind == wireErrorKindBudget {
 		var budget contracts.BudgetError
-		if err := Unmarshal(w.Data, &budget); err == nil {
+		if err := Unmarshal(wire.Data, &budget); err == nil {
 			return &budget
 		}
 	}
