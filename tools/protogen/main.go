@@ -179,7 +179,7 @@ func descriptorsInDependencyOrder(root protoreflect.FileDescriptor) []*descripto
 		}
 		visited[file.Path()] = true
 		imports := file.Imports()
-		for index := 0; index < imports.Len(); index++ {
+		for index := range imports.Len() {
 			visit(imports.Get(index).FileDescriptor)
 		}
 		ordered = append(ordered, protodesc.ToFileDescriptorProto(file))

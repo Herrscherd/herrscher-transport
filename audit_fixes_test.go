@@ -150,7 +150,7 @@ type concurrentBackend struct{ events int }
 
 func (b *concurrentBackend) Respond(_ context.Context, _ contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	var wg sync.WaitGroup
-	for i := 0; i < b.events; i++ {
+	for range b.events {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
