@@ -5,14 +5,13 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
-	"strings"
 
 	"google.golang.org/grpc/credentials"
 )
 
 // TLSConfig points at the PEM files that secure off-loopback transport: a CA to
 // verify the peer, plus this host's own certificate and key (presented to the
-// peer for mutual TLS). All three empty means plaintext — the single-host
+// peer for mutual TLS). All three empty means plaintext: the single-host
 // loopback default. Any subset is a half-configuration and is rejected
 // (fail-closed) rather than silently serving plaintext.
 type TLSConfig struct {
@@ -28,8 +27,11 @@ func (c TLSConfig) Enabled() bool {
 
 // Validate fails closed: plaintext (nothing set) is valid and full mTLS (all
 // three set) is valid, but any partial configuration is an error naming the
-// missing pieces — so a typo can never downgrade an intended-secure link to
+// missing pieces, so a typo can never downgrade an intended-secure link to
 // plaintext.
+//
+// It returns *TLSHalfConfiguredError when some but not all of CA, cert and key are
+// set, and nil otherwise.
 func (c TLSConfig) Validate() error {
 	if !c.Enabled() {
 		return nil
@@ -45,16 +47,14 @@ func (c TLSConfig) Validate() error {
 		missing = append(missing, "key")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(missing, ", "))
+		return &TLSHalfConfiguredError{Missing: missing}
 	}
 	return nil
 }
 
-// loadCertAndPool loads this host's keypair and the CA pool shared by both the
-// server and client credential builders.
 func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	if !c.Enabled() {
-		return tls.Certificate{}, nil, fmt.Errorf("transport: TLS not configured")
+		return tls.Certificate{}, nil, ErrTLSNotConfigured
 	}
 	if err := c.Validate(); err != nil {
 		return tls.Certificate{}, nil, err
@@ -69,7 +69,7 @@ func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return tls.Certificate{}, nil, fmt.Errorf("transport: CA %q held no usable certificate", c.CAFile)
+		return tls.Certificate{}, nil, &CAFileError{File: c.CAFile}
 	}
 	return cert, pool, nil
 }
@@ -77,6 +77,9 @@ func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 // ServerCredentials builds gRPC server credentials that present this host's cert
 // and require+verify a client cert signed by the CA (mutual TLS). Use it on the
 // plugin-host listener when TLS is configured.
+// It returns ErrTLSNotConfigured when no TLS field is set, *TLSHalfConfiguredError
+// on a partial setup, *CAFileError when the CA file holds no certificate,
+// and a wrapped error when the key pair or the CA file cannot be read.
 func (c TLSConfig) ServerCredentials() (credentials.TransportCredentials, error) {
 	cert, pool, err := c.loadCertAndPool()
 	if err != nil {
@@ -92,7 +95,9 @@ func (c TLSConfig) ServerCredentials() (credentials.TransportCredentials, error)
 
 // ClientCredentials builds gRPC client credentials that present this host's cert
 // and verify the server against the CA (mutual TLS). The server name is taken
-// from the dial target and matched against the server cert's SANs.
+// from the dial target and matched against the server cert's SANs. It returns
+// the same errors as ServerCredentials: ErrTLSNotConfigured, *TLSHalfConfiguredError,
+// *CAFileError, or a wrapped read error.
 func (c TLSConfig) ClientCredentials() (credentials.TransportCredentials, error) {
 	cert, pool, err := c.loadCertAndPool()
 	if err != nil {

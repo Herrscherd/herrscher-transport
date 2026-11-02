@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func memAnnounce(id, addr string) Announcement {
 
 func TestObserveDropsUnusableAddr(t *testing.T) {
 	r := NewRemoteRegistry()
-	r.Observe(memAnnounce("a", "")) // no host:port
+	r.Observe(memAnnounce("a", ""))
 	r.Observe(memAnnounce("b", "not-a-host-port"))
 	if got := r.Memories(); len(got) != 0 {
 		t.Fatalf("want unusable addresses dropped, got %+v", got)
@@ -30,7 +31,7 @@ func TestObserveAllowlistFailsClosed(t *testing.T) {
 		return strings.HasPrefix(addr, "127.0.0.1:")
 	}))
 	r.Observe(memAnnounce("trusted", "127.0.0.1:9000"))
-	r.Observe(memAnnounce("rogue", "10.0.0.5:9000")) // off-allowlist attacker address
+	r.Observe(memAnnounce("rogue", "10.0.0.5:9000"))
 
 	got := r.Memories()
 	if len(got) != 1 || got[0].InstanceID != "trusted" {
@@ -51,19 +52,61 @@ func TestDialConnRefusesPlaintextNonLoopback(t *testing.T) {
 	if err == nil {
 		t.Fatal("want refusal of plaintext dial to non-loopback address")
 	}
-	if !strings.Contains(err.Error(), "non-loopback") {
+	if _, ok := errors.AsType[*PlaintextDialError](err); !ok {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestDialConnAllowsPlaintextLoopback(t *testing.T) {
-	// grpc.NewClient is lazy, so a loopback plaintext dial succeeds without a
-	// live server; we only assert the guard does not reject it.
 	for _, addr := range []string{"127.0.0.1:9000", "localhost:9000", "[::1]:9000"} {
 		conn, err := dialConn(context.Background(), RemoteEntry{GrpcAddr: addr}, nil)
 		if err != nil {
 			t.Fatalf("loopback %q rejected: %v", addr, err)
 		}
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestObserveDropsUnqueryableAnnouncements(t *testing.T) {
+	cases := []struct {
+		name string
+		ann  Announcement
+	}{
+		{name: "empty instance id", ann: Announcement{
+			Manifest: contracts.Manifest{Category: contracts.CategoryMemory}, GrpcAddr: "127.0.0.1:9001",
+		}},
+		{name: "empty category", ann: Announcement{
+			InstanceID: "a", GrpcAddr: "127.0.0.1:9001",
+		}},
+		{name: "port only address", ann: memAnnounce("a", ":50051")},
+		{name: "host only address", ann: memAnnounce("a", "127.0.0.1:")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := NewRemoteRegistry()
+			r.Observe(tc.ann)
+			r.mu.RLock()
+			n := len(r.entries)
+			r.mu.RUnlock()
+			if n != 0 {
+				t.Fatalf("want announcement dropped, registry holds %d entries", n)
+			}
+		})
+	}
+}
+
+func TestObserveKeepsDistinctInstancesWithoutCollapsing(t *testing.T) {
+	r := NewRemoteRegistry()
+	r.Observe(memAnnounce("", "127.0.0.1:9001"))
+	r.Observe(memAnnounce("", "127.0.0.1:9002"))
+	if got := r.Memories(); len(got) != 0 {
+		t.Fatalf("want identity-less announcements dropped, got %+v", got)
+	}
+	r.Observe(memAnnounce("a", "127.0.0.1:9001"))
+	r.Observe(memAnnounce("b", "127.0.0.1:9002"))
+	if got := r.Memories(); len(got) != 2 {
+		t.Fatalf("want both identified plugins visible, got %+v", got)
 	}
 }

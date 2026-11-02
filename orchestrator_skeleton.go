@@ -2,58 +2,65 @@ package transport
 
 import (
 	"context"
-	"fmt"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+
 	pb "github.com/Herrscherd/herrscher-transport/proto"
-	"google.golang.org/grpc"
 )
 
 // PortOrchestrator names the orchestrator port on the wire.
 const PortOrchestrator = "orchestrator"
 
+const (
+	methodContext     = "Context"
+	methodObserve     = "Observe"
+	methodConsolidate = "Consolidate"
+)
+
 type orchestratorServer struct {
 	pb.UnimplementedPluginServer
+
 	real contracts.Orchestrator
 }
 
 // RegisterOrchestratorSkeleton wires a real Orchestrator behind the generic
 // Plugin service so a remote host can serve the conversation-policy port. The
 // surface is request/response (Context/Observe/Consolidate); the orchestrator
-// holds no streaming turn state, unlike the backend.
-func RegisterOrchestratorSkeleton(s *grpc.Server, real contracts.Orchestrator) {
-	routerFor(s).add(PortOrchestrator, &orchestratorServer{real: real})
+// holds no streaming turn state, unlike the backend. It returns ErrPortRegistered
+// when the orchestrator port is already registered on r.
+func RegisterOrchestratorSkeleton(r *PluginRouter, impl contracts.Orchestrator) error {
+	return r.add(PortOrchestrator, &orchestratorServer{real: impl})
 }
 
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {
 	if env.Port != PortOrchestrator {
-		return fail(fmt.Errorf("transport: unknown port %q", env.Port))
+		return fail(&UnknownPortError{Port: env.Port})
 	}
 	switch env.Method {
-	case "Context":
+	case methodContext:
 		out, err := encodeArgs(o.real.Context(ctx))
 		if err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{JsonPayload: out}, nil
-	case "Observe":
-		var a struct {
+	case methodObserve:
+		var args struct {
 			Prompt contracts.Prompt
 			Reply  string
 		}
-		if err := decodeArgs(env.JsonPayload, &a.Prompt, &a.Reply); err != nil {
+		if err := decodeArgs(env.JsonPayload, &args.Prompt, &args.Reply); err != nil {
 			return fail(err)
 		}
-		if err := o.real.Observe(ctx, a.Prompt, a.Reply); err != nil {
+		if err := o.real.Observe(ctx, args.Prompt, args.Reply); err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
-	case "Consolidate":
+	case methodConsolidate:
 		if err := o.real.Consolidate(ctx); err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
 	default:
-		return fail(fmt.Errorf("transport: unknown method orchestrator.%s", env.Method))
+		return fail(&UnknownMethodError{Service: PortOrchestrator, Method: env.Method})
 	}
 }

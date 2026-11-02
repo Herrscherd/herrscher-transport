@@ -2,27 +2,27 @@ package transport
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 func TestProxyErrorsWhenPeerDown(t *testing.T) {
-	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	lis := listenLoopback(t)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), &fakeMem{})
+	serveInBackground(t, s, lis)
 
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer closeOrFail(t, conn)
 	proxy := NewMemoryProxy(pb.NewPluginClient(conn))
 
 	s.Stop()
@@ -34,10 +34,10 @@ func TestProxyErrorsWhenPeerDown(t *testing.T) {
 }
 
 func TestDialMemoryCloseReleasesConn(t *testing.T) {
-	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	lis := listenLoopback(t)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), &fakeMem{})
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	mem, err := DialMemory(context.Background(), RemoteEntry{GrpcAddr: lis.Addr().String()}, nil)
@@ -50,7 +50,6 @@ func TestDialMemoryCloseReleasesConn(t *testing.T) {
 	if err := mem.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// After Close the local conn is gone: a further call must fail, not succeed.
 	if err := mem.Record(context.Background(), contracts.Node{Key: "k2"}); err == nil {
 		t.Fatal("expected error after Close released the connection, got nil")
 	}

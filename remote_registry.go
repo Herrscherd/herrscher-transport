@@ -7,10 +7,11 @@ import (
 	"sync"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 // RemoteEntry is one announced remote plugin.
@@ -24,8 +25,8 @@ type RemoteEntry struct {
 // as contracts.Registry, keyed by category.
 type RemoteRegistry struct {
 	mu      sync.RWMutex
-	entries map[string]RemoteEntry // InstanceID -> entry
-	allow   func(addr string) bool // nil = accept any well-formed address
+	entries map[string]RemoteEntry
+	allow   func(addr string) bool
 }
 
 // RegistryOption configures a RemoteRegistry at construction.
@@ -42,37 +43,40 @@ func WithAddrAllow(allow func(addr string) bool) RegistryOption {
 }
 
 // NewRemoteRegistry returns an empty registry of remote plugin instances.
+// Without WithAddrAllow the registry accepts any well formed announcement, so a
+// local process can announce itself and take over a category.
 func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
-	r := &RemoteRegistry{entries: map[string]RemoteEntry{}}
+	registry := &RemoteRegistry{entries: make(map[string]RemoteEntry)}
 	for _, o := range opts {
-		o(r)
+		o(registry)
 	}
-	return r
+	return registry
 }
 
-func (r *RemoteRegistry) Observe(a Announcement) {
-	if a.InstanceID == "" || a.Manifest.Category == "" {
+// Observe records the remote plugin instance that announcement describes. It ignores an announcement without an instance id or a category, one whose gRPC address is not host:port, and one whose address the allowlist refuses.
+func (r *RemoteRegistry) Observe(announcement Announcement) {
+	if announcement.InstanceID == "" || announcement.Manifest.Category == "" {
 		return
 	}
-	host, port, err := net.SplitHostPort(a.GrpcAddr)
+	host, port, err := net.SplitHostPort(announcement.GrpcAddr)
 	if err != nil || host == "" || port == "" {
 		return
 	}
-	if r.allow != nil && !r.allow(a.GrpcAddr) {
+	if r.allow != nil && !r.allow(announcement.GrpcAddr) {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.entries[a.InstanceID] = a.entry()
+	r.entries[announcement.InstanceID] = announcement.entry()
 }
 
-func (r *RemoteRegistry) byCategory(c contracts.Category) []RemoteEntry {
+func (r *RemoteRegistry) byCategory(category contracts.Category) []RemoteEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var out []RemoteEntry
-	for _, e := range r.entries {
-		if e.Manifest.Category == c {
-			out = append(out, e)
+	for _, entry := range r.entries {
+		if entry.Manifest.Category == category {
+			out = append(out, entry)
 		}
 	}
 	return out
@@ -91,27 +95,19 @@ func (r *RemoteRegistry) Backends() []RemoteEntry {
 	return r.byCategory(contracts.CategoryBackend)
 }
 
-// dialConn opens a gRPC connection to the entry. creds selects the transport
-// security: nil means plaintext (insecure) — the loopback default — while a
-// non-nil credentials.TransportCredentials (from TLSConfig) negotiates (m)TLS.
-// Plaintext is refused for any non-loopback address: dialing a remote host in
-// cleartext would put prompts/replies/memory on the wire, so this path fails
-// closed instead of silently downgrading (configure TLS for remote plugins).
-func dialConn(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
+func dialConn(ctx context.Context, entry RemoteEntry, creds credentials.TransportCredentials) (*grpc.ClientConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if creds == nil {
-		if err := requireLoopback(e.GrpcAddr); err != nil {
+		if err := requireLoopback(entry.GrpcAddr); err != nil {
 			return nil, err
 		}
 		creds = insecure.NewCredentials()
 	}
-	return grpc.NewClient(e.GrpcAddr, grpc.WithTransportCredentials(creds))
+	return grpc.NewClient(entry.GrpcAddr, grpc.WithTransportCredentials(creds))
 }
 
-// requireLoopback fails unless addr's host is loopback, guarding the plaintext
-// (nil-creds) path from serving a remote address in cleartext.
 func requireLoopback(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -123,43 +119,50 @@ func requireLoopback(addr string) error {
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
 	}
-	return fmt.Errorf("transport: refusing plaintext dial to non-loopback address %q; configure TLS for remote plugins", addr)
+	return &PlaintextDialError{Addr: addr}
 }
 
 // DialMemory builds a contracts.Memory proxy over the entry's gRPC address.
-// creds selects transport security (nil = plaintext loopback).
+// creds selects transport security (nil = plaintext loopback). It returns the
+// context error when ctx is already done, *PlaintextDialError when creds is nil
+// and the address is not loopback, and a wrapped address error when the address
+// has no port.
 func DialMemory(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Memory, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
-	p := NewMemoryProxy(pb.NewPluginClient(conn))
-	p.conn = conn
-	return p, nil
+	proxy := NewMemoryProxy(pb.NewPluginClient(conn))
+	proxy.dialed = conn
+	return proxy, nil
 }
 
 // DialOrchestrator builds a contracts.Orchestrator proxy over the entry's gRPC
-// address — the request/response sibling of DialMemory (the orchestrator holds
-// no per-turn stream state, so the same generic Plugin service carries it).
+// address. It is the request/response sibling of DialMemory: the orchestrator holds
+// no per-turn stream state, so the same generic Plugin service carries it. Its
+// errors are the same as DialMemory: the context error, *PlaintextDialError, or a
+// wrapped address error.
 func DialOrchestrator(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Orchestrator, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
-	p := NewOrchestratorProxy(pb.NewPluginClient(conn))
-	p.conn = conn
-	return p, nil
+	proxy := NewOrchestratorProxy(pb.NewPluginClient(conn))
+	proxy.dialed = conn
+	return proxy, nil
 }
 
 // DialBackend builds a contracts.Backend proxy over the entry's gRPC address.
 // The backend streams turn events, so the proxy keeps the raw connection (for
-// NewStream) rather than the generated unary Plugin client.
+// NewStream) rather than the generated unary Plugin client. Its errors are the
+// same as DialMemory: the context error, *PlaintextDialError, or a wrapped address
+// error.
 func DialBackend(ctx context.Context, e RemoteEntry, creds credentials.TransportCredentials) (contracts.Backend, error) {
 	conn, err := dialConn(ctx, e, creds)
 	if err != nil {
 		return nil, err
 	}
-	p := NewBackendProxy(conn)
-	p.conn = conn
-	return p, nil
+	proxy := NewBackendProxy(conn)
+	proxy.dialed = conn
+	return proxy, nil
 }

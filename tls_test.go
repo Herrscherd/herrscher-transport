@@ -8,11 +8,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,8 +26,7 @@ func TestTLSConfigValidate(t *testing.T) {
 		name    string
 		cfg     TLSConfig
 		wantErr bool
-		// substrings the error message must name (the missing pieces)
-		names []string
+		names   []string
 	}{
 		{name: "plaintext (none set)", cfg: TLSConfig{}, wantErr: false},
 		{name: "full mTLS (all set)", cfg: TLSConfig{CAFile: "ca", CertFile: "c", KeyFile: "k"}, wantErr: false},
@@ -39,19 +39,31 @@ func TestTLSConfigValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.cfg.Validate()
-			if tc.wantErr && err == nil {
-				t.Fatalf("Validate() = nil, want a half-configuration error")
-			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("Validate() = %v, want nil", err)
-			}
-			for _, n := range tc.names {
-				if !strings.Contains(err.Error(), n) {
-					t.Fatalf("error %q must name the missing field %q", err, n)
-				}
-			}
+			assertValidateOutcome(t, tc.cfg, tc.wantErr, tc.names)
 		})
+	}
+}
+
+func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []string) {
+	t.Helper()
+	err := cfg.Validate()
+	if wantErr && err == nil {
+		t.Fatalf("Validate() = nil, want a half-configuration error")
+	}
+	if !wantErr && err != nil {
+		t.Fatalf("Validate() = %v, want nil", err)
+	}
+	if len(names) == 0 {
+		return
+	}
+	half, ok := errors.AsType[*TLSHalfConfiguredError](err)
+	if !ok {
+		t.Fatalf("Validate() = %v, want *TLSHalfConfiguredError", err)
+	}
+	for _, n := range names {
+		if !slices.Contains(half.Missing, n) {
+			t.Fatalf("error %v must name the missing field %q", err, n)
+		}
 	}
 }
 
@@ -64,13 +76,13 @@ func TestMTLSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server creds: %v", err)
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), &fakeMem{})
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	cc, err := clientTLS.ClientCredentials()
@@ -83,7 +95,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer mem.Close()
+	defer closeOrFail(t, mem)
 	if err := mem.Record(ctx, contracts.Node{Key: "k"}); err != nil {
 		t.Fatalf("mTLS Record should succeed, got %v", err)
 	}
@@ -97,32 +109,27 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server creds: %v", err)
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	RegisterMemorySkeleton(s, &fakeMem{})
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), &fakeMem{})
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
-	// A client dialing plaintext (nil creds) against a mTLS server must be
-	// rejected at the handshake — the call fails rather than leaking onto an
-	// unauthenticated link.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	mem, err := DialMemory(ctx, RemoteEntry{GrpcAddr: lis.Addr().String()}, nil)
 	if err != nil {
-		return // dial itself refused — acceptable rejection
+		return
 	}
-	defer mem.Close()
+	defer closeOrFail(t, mem)
 	if err := mem.Record(ctx, contracts.Node{Key: "k"}); err == nil {
 		t.Fatal("a plaintext client must be rejected by the mTLS server, got a successful Record")
 	}
 }
 
-// genCertPair writes a CA, a server leaf (SAN 127.0.0.1), and a client leaf
-// (ExtKeyUsage ClientAuth) to a temp dir and returns the dir.
 func genCertPair(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -150,7 +157,7 @@ func genCertPair(t *testing.T) string {
 	}
 	writePEM(t, filepath.Join(dir, "ca.pem"), "CERTIFICATE", caDER)
 
-	leaf := func(name string, eku []x509.ExtKeyUsage, ips []net.IP) (string, string) {
+	leaf := func(name string, eku []x509.ExtKeyUsage, ips []net.IP) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			t.Fatalf("%s key: %v", name, err)
@@ -176,7 +183,6 @@ func genCertPair(t *testing.T) string {
 			t.Fatalf("%s marshal key: %v", name, err)
 		}
 		writePEM(t, keyPath, "EC PRIVATE KEY", keyDER)
-		return certPath, keyPath
 	}
 
 	leaf("server", []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, []net.IP{net.ParseIP("127.0.0.1")})
@@ -190,7 +196,7 @@ func writePEM(t *testing.T, path, blockType string, der []byte) {
 	if err != nil {
 		t.Fatalf("create %s: %v", path, err)
 	}
-	defer f.Close()
+	defer closeOrFail(t, f)
 	if err := pem.Encode(f, &pem.Block{Type: blockType, Bytes: der}); err != nil {
 		t.Fatalf("encode %s: %v", path, err)
 	}

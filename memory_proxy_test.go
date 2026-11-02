@@ -6,18 +6,19 @@ import (
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
-func dialSkeleton(t *testing.T, real contracts.Memory) pb.PluginClient {
+func dialSkeleton(t *testing.T, impl contracts.Memory) pb.PluginClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(s, real)
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), impl)
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
@@ -25,7 +26,7 @@ func dialSkeleton(t *testing.T, real contracts.Memory) pb.PluginClient {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 	return pb.NewPluginClient(conn)
 }
 
@@ -57,16 +58,12 @@ func TestMemoryProxyRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProxyCloseKeepsSharedRealAndPeersAlive guards the plugin-host topology:
-// one server (one real Memory) behind two client connections. Closing one proxy
-// must release only its own connection — it must not close the shared real, and
-// the other proxy must stay usable.
 func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
 	fake := &fakeMem{}
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	RegisterMemorySkeleton(s, fake)
-	go func() { _ = s.Serve(lis) }()
+	registerMemory(t, newRouter(t, s), fake)
+	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
 	dial := func() *MemoryProxy {
@@ -77,7 +74,7 @@ func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
 			t.Fatalf("dial: %v", err)
 		}
 		p := NewMemoryProxy(pb.NewPluginClient(conn))
-		p.conn = conn
+		p.dialed = conn
 		return p
 	}
 

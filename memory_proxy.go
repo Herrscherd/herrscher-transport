@@ -5,13 +5,14 @@ import (
 	"io"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 // MemoryProxy is a contracts.Memory backed by a remote plugin over gRPC.
 type MemoryProxy struct {
 	client pb.PluginClient
-	conn   io.Closer // dialed connection, released by Close; nil when the client is supplied directly
+	dialed io.Closer
 }
 
 var _ contracts.Memory = (*MemoryProxy)(nil)
@@ -34,8 +35,9 @@ func (p *MemoryProxy) call(ctx context.Context, method string, args ...any) (*pb
 	return res, nil
 }
 
+// Recall returns the subgraph around key, up to depth links away, as the remote memory computes it.
 func (p *MemoryProxy) Recall(ctx context.Context, key string, depth int) (contracts.Subgraph, error) {
-	res, err := p.call(ctx, "Recall", key, depth)
+	res, err := p.call(ctx, methodRecall, key, depth)
 	if err != nil {
 		return contracts.Subgraph{}, err
 	}
@@ -46,13 +48,15 @@ func (p *MemoryProxy) Recall(ctx context.Context, key string, depth int) (contra
 	return out, nil
 }
 
+// Record stores n in the remote memory.
 func (p *MemoryProxy) Record(ctx context.Context, n contracts.Node) error {
-	_, err := p.call(ctx, "Record", n)
+	_, err := p.call(ctx, methodRecord, n)
 	return err
 }
 
+// Search returns the nodes of the remote memory that match q.
 func (p *MemoryProxy) Search(ctx context.Context, q contracts.Query) ([]contracts.Node, error) {
-	res, err := p.call(ctx, "Search", q)
+	res, err := p.call(ctx, methodSearch, q)
 	if err != nil {
 		return nil, err
 	}
@@ -63,13 +67,15 @@ func (p *MemoryProxy) Search(ctx context.Context, q contracts.Query) ([]contract
 	return out, nil
 }
 
+// Links records the relation rel from the node from to the node to in the remote memory.
 func (p *MemoryProxy) Links(ctx context.Context, from, to, rel string) error {
-	_, err := p.call(ctx, "Links", from, to, rel)
+	_, err := p.call(ctx, methodLinks, from, to, rel)
 	return err
 }
 
+// Unlink removes the relation from the node from to the node to in the remote memory.
 func (p *MemoryProxy) Unlink(ctx context.Context, from, to string) error {
-	_, err := p.call(ctx, "Unlink", from, to)
+	_, err := p.call(ctx, methodUnlink, from, to)
 	return err
 }
 
@@ -77,8 +83,8 @@ func (p *MemoryProxy) Unlink(ctx context.Context, from, to string) error {
 // remote Memory: the plugin-host owns that object and may serve other clients,
 // so one bridge shutting down must not tear the shared memory down.
 func (p *MemoryProxy) Close() error {
-	if p.conn != nil {
-		return p.conn.Close()
+	if p.dialed != nil {
+		return p.dialed.Close()
 	}
 	return nil
 }

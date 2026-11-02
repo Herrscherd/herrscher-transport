@@ -3,19 +3,19 @@ package transport
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
-	"strings"
+	"sync"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
-// fakeBackend emits a fixed event sequence then returns a reply/error, recording
-// the prompt it saw and whether it was closed.
 type fakeBackend struct {
 	events    []contracts.BackendEvent
 	reply     string
@@ -33,15 +33,12 @@ func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, onEvent fun
 }
 func (f *fakeBackend) Close() error { f.closed++; return nil }
 
-// serveBackend stands up a backend skeleton (or a custom streaming server) over
-// an in-memory gRPC link and returns a proxy plus the server/conn so a test can
-// break the transport.
 func serveBackend(t *testing.T, register func(*grpc.Server)) (*BackendProxy, *grpc.Server, *grpc.ClientConn) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
 	register(s)
-	go func() { _ = s.Serve(lis) }()
+	serveInBackground(t, s, lis)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) { return lis.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -49,7 +46,7 @@ func serveBackend(t *testing.T, register func(*grpc.Server)) (*BackendProxy, *gr
 		t.Fatalf("dial: %v", err)
 	}
 	p := NewBackendProxy(conn)
-	p.conn = conn
+	p.dialed = conn
 	return p, s, conn
 }
 
@@ -62,7 +59,7 @@ func TestBackendStreamRoundTripsEventsThenReply(t *testing.T) {
 	fake := &fakeBackend{events: want, reply: "final"}
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) { RegisterBackendSkeleton(s, fake) })
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got []contracts.BackendEvent
 	reply, err := proxy.Respond(context.Background(),
@@ -94,12 +91,13 @@ func TestBackendStreamSurfacesRespondError(t *testing.T) {
 	}
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) { RegisterBackendSkeleton(s, fake) })
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got int
 	_, err := proxy.Respond(context.Background(), contracts.Prompt{},
 		func(contracts.BackendEvent) { got++ })
-	if err == nil || !strings.Contains(err.Error(), "boom") {
+	var remote *remoteError
+	if err == nil || !errors.As(err, &remote) || remote.message != "boom" {
 		t.Fatalf("expected the remote Respond error to surface, got %v", err)
 	}
 	if got != 1 {
@@ -107,8 +105,6 @@ func TestBackendStreamSurfacesRespondError(t *testing.T) {
 	}
 }
 
-// droppingServer sends one event then ends the stream WITHOUT a Done frame,
-// modelling a backend that crashes / drops mid-turn.
 type droppingServer struct{}
 
 func (droppingServer) respond(_ *pb.MethodEnvelope, stream grpc.ServerStream) error {
@@ -119,15 +115,16 @@ func (droppingServer) respond(_ *pb.MethodEnvelope, stream grpc.ServerStream) er
 	if err := stream.SendMsg(&pb.ResultEnvelope{JsonPayload: payload}); err != nil {
 		return err
 	}
-	return nil // no Done frame → the client sees EOF before reply{done}
+	return nil
 }
 
 func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) {
-		s.RegisterService(&backendStreamServiceDesc, droppingServer{})
+		desc := backendStreamServiceDesc()
+		s.RegisterService(&desc, droppingServer{})
 	})
 	t.Cleanup(s.Stop)
-	t.Cleanup(func() { _ = conn.Close() })
+	t.Cleanup(func() { closeOrFail(t, conn) })
 
 	var got int
 	reply, err := proxy.Respond(context.Background(), contracts.Prompt{},
@@ -135,7 +132,7 @@ func TestBackendStreamDropMidTurnIsHangup(t *testing.T) {
 	if err == nil {
 		t.Fatal("a stream ending before reply{done} must surface an error (hangup), got nil")
 	}
-	if !strings.Contains(err.Error(), "before reply{done}") {
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected a hangup error, got %v", err)
 	}
 	if reply != "" {
@@ -156,5 +153,51 @@ func TestBackendProxyCloseReleasesConnOnly(t *testing.T) {
 	}
 	if fake.closed != 0 {
 		t.Fatalf("proxy Close must not close the remote backend; closed=%d", fake.closed)
+	}
+}
+
+type recvNilStream struct{ grpc.ServerStream }
+
+func (recvNilStream) RecvMsg(any) error { return nil }
+
+func TestBackendRespondHandlerRefusesServerWithoutRespond(t *testing.T) {
+	if err := backendRespondHandler(struct{}{}, recvNilStream{}); !errors.Is(err, errBackendStreamNotResponder) {
+		t.Fatalf("a server without respond must be refused with errBackendStreamNotResponder, got %v", err)
+	}
+}
+
+type concurrentBackend struct{ events int }
+
+func (b *concurrentBackend) Respond(_ context.Context, _ contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
+	var wg sync.WaitGroup
+	for range b.events {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			onEvent(contracts.BackendEvent{Kind: "text", Detail: "chunk"})
+		}()
+	}
+	wg.Wait()
+	return "done", nil
+}
+func (b *concurrentBackend) Close() error { return nil }
+
+func TestBackendSkeletonToleratesConcurrentOnEvent(t *testing.T) {
+	proxy, s, conn := serveBackend(t, func(s *grpc.Server) {
+		RegisterBackendSkeleton(s, &concurrentBackend{events: 32})
+	})
+	t.Cleanup(s.Stop)
+	t.Cleanup(func() { closeOrFail(t, conn) })
+
+	var seen int
+	reply, err := proxy.Respond(context.Background(), contracts.Prompt{Content: "hi"}, func(contracts.BackendEvent) { seen++ })
+	if err != nil {
+		t.Fatalf("respond: %v", err)
+	}
+	if reply != "done" {
+		t.Fatalf("reply = %q", reply)
+	}
+	if seen != 32 {
+		t.Fatalf("want 32 events forwarded, got %d", seen)
 	}
 }

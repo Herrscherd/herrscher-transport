@@ -2,6 +2,8 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,6 +11,8 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 )
+
+const announceWait = 5 * time.Second
 
 func runNATS(t *testing.T) *nats.Conn {
 	t.Helper()
@@ -18,10 +22,13 @@ func runNATS(t *testing.T) *nats.Conn {
 		t.Fatalf("nats server: %v", err)
 	}
 	go srv.Start()
+	t.Cleanup(func() {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+	})
 	if !srv.ReadyForConnections(2 * time.Second) {
 		t.Fatal("nats not ready")
 	}
-	t.Cleanup(srv.Shutdown)
 	nc, err := nats.Connect(srv.ClientURL())
 	if err != nil {
 		t.Fatalf("nats connect: %v", err)
@@ -32,8 +39,10 @@ func runNATS(t *testing.T) *nats.Conn {
 
 func TestAnnounceWatch(t *testing.T) {
 	nc := runNATS(t)
+	ctx, cancel := context.WithTimeout(t.Context(), announceWait)
+	defer cancel()
 	got := make(chan Announcement, 1)
-	if err := WatchAnnouncements(nc, func(a Announcement) { got <- a }); err != nil {
+	if err := WatchAnnouncements(nc, func(a Announcement) { got <- a }, func(error) {}); err != nil {
 		t.Fatalf("watch: %v", err)
 	}
 	ann := Announcement{
@@ -44,13 +53,45 @@ func TestAnnounceWatch(t *testing.T) {
 	if err := Announce(nc, ann); err != nil {
 		t.Fatalf("announce: %v", err)
 	}
+	var a Announcement
 	select {
-	case a := <-got:
-		if a.Manifest.Kind != "sqlite" || a.GrpcAddr != "127.0.0.1:50111" {
-			t.Fatalf("bad announcement: %+v", a)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no announcement received")
+	case a = <-got:
+	case <-ctx.Done():
+		t.Fatalf("no announcement within %s: %v", announceWait, ctx.Err())
 	}
-	_ = context.Background()
+	if a.Manifest.Kind != "sqlite" || a.GrpcAddr != "127.0.0.1:50111" {
+		t.Fatalf("bad announcement: %+v", a)
+	}
+}
+
+func TestWatchAnnouncementsRefusesNilHook(t *testing.T) {
+	nc := runNATS(t)
+	if err := WatchAnnouncements(nc, nil, func(error) {}); !errors.Is(err, ErrNilHook) {
+		t.Fatalf("nil announcement hook: want ErrNilHook, got %v", err)
+	}
+	if err := WatchAnnouncements(nc, func(Announcement) {}, nil); !errors.Is(err, ErrNilHook) {
+		t.Fatalf("nil decode hook: want ErrNilHook, got %v", err)
+	}
+}
+
+func TestWatchAnnouncementsReportsDecodeErrors(t *testing.T) {
+	nc := runNATS(t)
+	ctx, cancel := context.WithTimeout(t.Context(), announceWait)
+	defer cancel()
+	failures := make(chan error, 1)
+	if err := WatchAnnouncements(nc, func(Announcement) {}, func(err error) { failures <- err }); err != nil {
+		t.Fatalf("watch: %v", err)
+	}
+	if err := nc.Publish(SubjectAnnounce, []byte("{not json")); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	var err error
+	select {
+	case err = <-failures:
+	case <-ctx.Done():
+		t.Fatalf("no decode failure within %s: %v", announceWait, ctx.Err())
+	}
+	if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }

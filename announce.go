@@ -16,45 +16,39 @@ type Announcement struct {
 	InstanceID string
 }
 
-// entry projects the wire Announcement onto the registry's internal RemoteEntry.
-// The two are kept as distinct types (wire vs stored) but share a field set, so
-// the copy lives here rather than being open-coded at each Observe call.
 func (a Announcement) entry() RemoteEntry {
-	return RemoteEntry{Manifest: a.Manifest, GrpcAddr: a.GrpcAddr, InstanceID: a.InstanceID}
+	return RemoteEntry(a)
 }
 
-// Announce publishes an Announcement on SubjectAnnounce.
-func Announce(nc *nats.Conn, ann Announcement) error {
-	b, err := Marshal(ann)
+// Announce publishes an Announcement on SubjectAnnounce. It returns the marshal
+// or publish error wrapped with a transport prefix; it has no sentinel or typed
+// error.
+func Announce(conn *nats.Conn, ann Announcement) error {
+	payload, err := Marshal(ann)
 	if err != nil {
 		return fmt.Errorf("transport: marshal announcement: %w", err)
 	}
-	if err := nc.Publish(SubjectAnnounce, b); err != nil {
+	if err := conn.Publish(SubjectAnnounce, payload); err != nil {
 		return fmt.Errorf("transport: publish announcement: %w", err)
 	}
 	return nil
 }
 
-var OnDecodeError func(error)
-
-// WatchAnnouncements invokes fn for every Announcement seen on SubjectAnnounce.
-func WatchAnnouncements(nc *nats.Conn, fn func(Announcement)) error {
-	return WatchAnnouncementsFunc(nc, fn, nil)
-}
-
-func WatchAnnouncementsFunc(nc *nats.Conn, fn func(Announcement), onErr func(error)) error {
-	if onErr == nil {
-		onErr = OnDecodeError
+// WatchAnnouncements invokes onAnnouncement for every Announcement seen on
+// SubjectAnnounce and passes each decode failure to onDecodeErr. Both hooks are
+// required: a nil hook is refused with ErrNilHook before any subscription is made.
+// It returns the NATS subscribe error.
+func WatchAnnouncements(conn *nats.Conn, onAnnouncement func(Announcement), onDecodeErr func(error)) error {
+	if onAnnouncement == nil || onDecodeErr == nil {
+		return ErrNilHook
 	}
-	_, err := nc.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
+	_, err := conn.Subscribe(SubjectAnnounce, func(msg *nats.Msg) {
 		var ann Announcement
 		if err := Unmarshal(msg.Data, &ann); err != nil {
-			if onErr != nil {
-				onErr(fmt.Errorf("transport: decode announcement: %w", err))
-			}
+			onDecodeErr(fmt.Errorf("transport: decode announcement: %w", err))
 			return
 		}
-		fn(ann)
+		onAnnouncement(ann)
 	})
 	return err
 }

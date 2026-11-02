@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
@@ -15,15 +16,15 @@ type fakeMem struct {
 	unlinked [2]string
 }
 
-func (f *fakeMem) Recall(_ context.Context, key string, depth int) (contracts.Subgraph, error) {
+func (f *fakeMem) Recall(_ context.Context, key string, _ int) (contracts.Subgraph, error) {
 	f.recall.Root = contracts.Node{Key: key}
 	return f.recall, nil
 }
 func (f *fakeMem) Record(_ context.Context, n contracts.Node) error { f.recorded = n; return nil }
-func (f *fakeMem) Search(_ context.Context, q contracts.Query) ([]contracts.Node, error) {
+func (f *fakeMem) Search(_ context.Context, _ contracts.Query) ([]contracts.Node, error) {
 	return []contracts.Node{{Key: "hit"}}, nil
 }
-func (f *fakeMem) Links(_ context.Context, from, to, rel string) error { return nil }
+func (f *fakeMem) Links(_ context.Context, _, _, _ string) error { return nil }
 func (f *fakeMem) Unlink(_ context.Context, from, to string) error {
 	f.unlinked = [2]string{from, to}
 	return nil
@@ -33,7 +34,7 @@ func (f *fakeMem) Close() error { f.closed++; return nil }
 func TestMemorySkeletonRecord(t *testing.T) {
 	fake := &fakeMem{}
 	srv := &memoryServer{real: fake}
-	args, _ := Marshal([]any{contracts.Node{Key: "sessions/x", Title: "X"}})
+	args := mustMarshal(t, []any{contracts.Node{Key: "sessions/x", Title: "X"}})
 	res, err := srv.Call(context.Background(),
 		&pb.MethodEnvelope{Port: "memory", Method: "Record", JsonPayload: args})
 	if err != nil {
@@ -50,7 +51,7 @@ func TestMemorySkeletonRecord(t *testing.T) {
 func TestMemorySkeletonUnlink(t *testing.T) {
 	fake := &fakeMem{}
 	srv := &memoryServer{real: fake}
-	args, _ := Marshal([]any{"facts/x", "facts/umbrella"})
+	args := mustMarshal(t, []any{"facts/x", "facts/umbrella"})
 	res, err := srv.Call(context.Background(),
 		&pb.MethodEnvelope{Port: "memory", Method: "Unlink", JsonPayload: args})
 	if err != nil {
@@ -61,5 +62,19 @@ func TestMemorySkeletonUnlink(t *testing.T) {
 	}
 	if fake.unlinked != [2]string{"facts/x", "facts/umbrella"} {
 		t.Fatalf("Unlink not dispatched, got %+v", fake.unlinked)
+	}
+}
+
+func TestMemorySkeletonRejectsShortArgTuple(t *testing.T) {
+	fake := &fakeMem{}
+	srv := &memoryServer{real: fake}
+	args := mustMarshal(t, []any{"facts/x"})
+	res, err := srv.Call(context.Background(),
+		&pb.MethodEnvelope{Port: PortMemory, Method: "Recall", JsonPayload: args})
+	if err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+	if res.Error == "" {
+		t.Fatal("want a short Recall tuple rejected, got a silent depth-0 recall")
 	}
 }

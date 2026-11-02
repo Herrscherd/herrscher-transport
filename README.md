@@ -28,10 +28,28 @@ NATS as an already-connected `*nats.Conn`.
 
 ## Proxy and skeleton
 
-Each port has a symmetric pair. `RegisterMemorySkeleton(s, real)`, and its
-`Orchestrator` and `Backend` equivalents, put a real port object behind the gRPC
-service. `DialMemory(ctx, entry, creds)` returns a `contracts.Memory` proxy that
-owns its connection and releases it on `Close`.
+Each port has a symmetric pair. Memory and orchestrator share the generic `Plugin`
+service, served by one `*PluginRouter` per gRPC server. Backend has its own
+streaming service and registers on the `*grpc.Server` directly:
+
+```go
+router, err := transport.NewPluginRouter(s)
+if err != nil {
+	return err
+}
+if err := transport.RegisterMemorySkeleton(router, real); err != nil {
+	return err
+}
+transport.RegisterBackendSkeleton(s, backend)
+```
+
+`NewPluginRouter` returns `ErrPluginServiceRegistered` when the server already
+has a router, so call it once per server, before `Serve`. After `Serve`, grpc
+exits the process on the registration instead of returning an error.
+`RegisterMemorySkeleton`
+and `RegisterOrchestratorSkeleton` return `ErrPortRegistered` when their port is
+already registered on the router. `DialMemory(ctx, entry, creds)` returns a
+`contracts.Memory` proxy that owns its connection and releases it on `Close`.
 
 Adding a method never touches the `.proto`. The method name and a JSON argument
 tuple ride inside `MethodEnvelope`.
@@ -42,15 +60,18 @@ the gRPC error instead.
 ## Discovery and trust
 
 A plugin publishes an `Announcement` (its manifest, gRPC address and instance id)
-on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`.
+on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`. Both of its hooks are
+required: a nil hook is refused with `ErrNilHook`.
 
 NATS core pub-sub has no replay, so the publisher is expected to re-announce
 periodically. This module only publishes what it is told to.
 
-The announce bus is unauthenticated, so both trust decisions fail closed.
+The announce bus is unauthenticated. Without `WithAddrAllow`, `RemoteRegistry`
+accepts any well formed announcement, so any process that can reach the bus, a
+local one included, can announce itself and take over a category.
 `NewRemoteRegistry(WithAddrAllow(fn))` drops announcements whose address the
-allowlist rejects, and dialing with `nil` credentials is refused for any
-non-loopback address.
+allowlist rejects. Dialing with `nil` credentials is refused for any non-loopback
+address.
 
 `TLSConfig` requires CA, cert and key together, which is mutual TLS. Any partial
 set is an error rather than a silent downgrade to plaintext.
