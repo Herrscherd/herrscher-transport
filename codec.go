@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Marshal encodes a contracts value for the wire. JSON keeps contracts the.
+// Marshal encodes a contracts value for the wire as JSON, so the payload stays readable and language neutral.
 func Marshal(v any) ([]byte, error) { return json.Marshal(v) }
 
 // Unmarshal decodes a wire payload into a contracts value.
