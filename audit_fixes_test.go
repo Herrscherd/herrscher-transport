@@ -128,7 +128,7 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	t.Cleanup(func() { closeOrFail(t, conn) })
 	client := pb.NewPluginClient(conn)
 
-	if err := NewMemoryProxy(client).Record(context.Background(), contracts.Node{Key: "facts/x"}); err != nil {
+	if err = NewMemoryProxy(client).Record(context.Background(), contracts.Node{Key: "facts/x"}); err != nil {
 		t.Fatalf("memory port on shared server: %v", err)
 	}
 	if mem.recorded.Key != "facts/x" {
