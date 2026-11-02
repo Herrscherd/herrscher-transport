@@ -14,7 +14,6 @@ var ErrTLSNotConfigured = errors.New("transport: TLS not configured")
 
 var ErrNilHook = errors.New("transport: nil announcement hook")
 
-
 // UnknownPortError reports a request addressed to a port that no service serves.
 type UnknownPortError struct {
 	Port string

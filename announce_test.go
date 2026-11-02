@@ -64,4 +64,3 @@ func TestWatchAnnouncementsRefusesNilHook(t *testing.T) {
 		t.Fatalf("nil decode hook: want ErrNilHook, got %v", err)
 	}
 }
-
