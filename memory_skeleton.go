@@ -11,6 +11,14 @@ import (
 // PortMemory names the memory port on the wire.
 const PortMemory = "memory"
 
+const (
+	methodRecall = "Recall"
+	methodRecord = "Record"
+	methodSearch = "Search"
+	methodLinks  = "Links"
+	methodUnlink = "Unlink"
+)
+
 type memoryServer struct {
 	pb.UnimplementedPluginServer
 
@@ -31,18 +39,18 @@ func (m *memoryServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.Re
 		return fail(&UnknownPortError{Port: env.Port})
 	}
 	switch env.Method {
-	case "Recall":
+	case methodRecall:
 		return m.recall(ctx, env)
-	case "Record":
+	case methodRecord:
 		return m.record(ctx, env)
-	case "Search":
+	case methodSearch:
 		return m.search(ctx, env)
-	case "Links":
+	case methodLinks:
 		return m.links(ctx, env)
-	case "Unlink":
+	case methodUnlink:
 		return m.unlink(ctx, env)
 	default:
-		return fail(&UnknownMethodError{Service: "memory", Method: env.Method})
+		return fail(&UnknownMethodError{Service: PortMemory, Method: env.Method})
 	}
 }
 

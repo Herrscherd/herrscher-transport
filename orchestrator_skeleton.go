@@ -11,6 +11,12 @@ import (
 // PortOrchestrator names the orchestrator port on the wire.
 const PortOrchestrator = "orchestrator"
 
+const (
+	methodContext     = "Context"
+	methodObserve     = "Observe"
+	methodConsolidate = "Consolidate"
+)
+
 type orchestratorServer struct {
 	pb.UnimplementedPluginServer
 
@@ -30,13 +36,13 @@ func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (
 		return fail(&UnknownPortError{Port: env.Port})
 	}
 	switch env.Method {
-	case "Context":
+	case methodContext:
 		out, err := encodeArgs(o.real.Context(ctx))
 		if err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{JsonPayload: out}, nil
-	case "Observe":
+	case methodObserve:
 		var args struct {
 			Prompt contracts.Prompt
 			Reply  string
@@ -48,12 +54,12 @@ func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
-	case "Consolidate":
+	case methodConsolidate:
 		if err := o.real.Consolidate(ctx); err != nil {
 			return fail(err)
 		}
 		return &pb.ResultEnvelope{}, nil
 	default:
-		return fail(&UnknownMethodError{Service: "orchestrator", Method: env.Method})
+		return fail(&UnknownMethodError{Service: PortOrchestrator, Method: env.Method})
 	}
 }

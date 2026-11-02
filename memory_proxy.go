@@ -37,7 +37,7 @@ func (p *MemoryProxy) call(ctx context.Context, method string, args ...any) (*pb
 
 // Recall returns the subgraph around key, up to depth links away, as the remote memory computes it.
 func (p *MemoryProxy) Recall(ctx context.Context, key string, depth int) (contracts.Subgraph, error) {
-	res, err := p.call(ctx, "Recall", key, depth)
+	res, err := p.call(ctx, methodRecall, key, depth)
 	if err != nil {
 		return contracts.Subgraph{}, err
 	}
@@ -50,13 +50,13 @@ func (p *MemoryProxy) Recall(ctx context.Context, key string, depth int) (contra
 
 // Record stores n in the remote memory.
 func (p *MemoryProxy) Record(ctx context.Context, n contracts.Node) error {
-	_, err := p.call(ctx, "Record", n)
+	_, err := p.call(ctx, methodRecord, n)
 	return err
 }
 
 // Search returns the nodes of the remote memory that match q.
 func (p *MemoryProxy) Search(ctx context.Context, q contracts.Query) ([]contracts.Node, error) {
-	res, err := p.call(ctx, "Search", q)
+	res, err := p.call(ctx, methodSearch, q)
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +69,13 @@ func (p *MemoryProxy) Search(ctx context.Context, q contracts.Query) ([]contract
 
 // Links records the relation rel from the node from to the node to in the remote memory.
 func (p *MemoryProxy) Links(ctx context.Context, from, to, rel string) error {
-	_, err := p.call(ctx, "Links", from, to, rel)
+	_, err := p.call(ctx, methodLinks, from, to, rel)
 	return err
 }
 
 // Unlink removes the relation from the node from to the node to in the remote memory.
 func (p *MemoryProxy) Unlink(ctx context.Context, from, to string) error {
-	_, err := p.call(ctx, "Unlink", from, to)
+	_, err := p.call(ctx, methodUnlink, from, to)
 	return err
 }
 
