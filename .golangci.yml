@@ -188,6 +188,7 @@ linters:
         text: "^G204:"
       - path: ^plugin_router\.go$
         linters: [gochecknoglobals]
+        text: "pluginServerClaims"
 
 formatters:
   enable:
