@@ -73,8 +73,6 @@ func TestOrchestratorProxyRoundTrip(t *testing.T) {
 	}
 }
 
-// TestOrchestratorProxyContextDegradesOnTransportError pins the port contract:
-// Context must never surface a turn-breaking error: a broken transport yields "".
 func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 	proxy, s, conn := serveOrch(t, &fakeOrch{ctxOut: "ctx"})
 
@@ -90,8 +88,6 @@ func TestOrchestratorProxyContextDegradesOnTransportError(t *testing.T) {
 	}
 }
 
-// TestOrchestratorProxyObserveSurfacesError asserts Observe propagates the
-// remote's error (best-effort; the host logs it but does not break the loop).
 func TestOrchestratorProxyObserveSurfacesError(t *testing.T) {
 	proxy, s, conn := serveOrch(t, &fakeOrch{observeErr: errors.New("boom")})
 	t.Cleanup(s.Stop)
@@ -102,9 +98,6 @@ func TestOrchestratorProxyObserveSurfacesError(t *testing.T) {
 	}
 }
 
-// TestOrchestratorProxyCloseReleasesConnOnly guards the topology: closing the
-// proxy releases only its connection and never closes the remote orchestrator
-// (its host owns that lifecycle).
 func TestOrchestratorProxyCloseReleasesConnOnly(t *testing.T) {
 	fake := &fakeOrch{}
 	proxy, s, _ := serveOrch(t, fake)
