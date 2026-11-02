@@ -4,7 +4,6 @@ import (
 	"context"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	"google.golang.org/grpc"
 
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
@@ -22,8 +21,8 @@ type orchestratorServer struct {
 // Plugin service so a remote host can serve the conversation-policy port. The
 // surface is request/response (Context/Observe/Consolidate); the orchestrator
 // holds no streaming turn state, unlike the backend.
-func RegisterOrchestratorSkeleton(s *grpc.Server, real contracts.Orchestrator) {
-	routerFor(s).add(PortOrchestrator, &orchestratorServer{real: real})
+func RegisterOrchestratorSkeleton(r *PluginRouter, real contracts.Orchestrator) {
+	r.add(PortOrchestrator, &orchestratorServer{real: real})
 }
 
 func (o *orchestratorServer) Call(ctx context.Context, env *pb.MethodEnvelope) (*pb.ResultEnvelope, error) {

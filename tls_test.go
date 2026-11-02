@@ -74,7 +74,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	RegisterMemorySkeleton(s, &fakeMem{})
+	RegisterMemorySkeleton(NewPluginRouter(s), &fakeMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
@@ -107,7 +107,7 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	RegisterMemorySkeleton(s, &fakeMem{})
+	RegisterMemorySkeleton(NewPluginRouter(s), &fakeMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 

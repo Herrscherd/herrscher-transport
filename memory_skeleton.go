@@ -4,7 +4,6 @@ import (
 	"context"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	"google.golang.org/grpc"
 
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
@@ -19,8 +18,8 @@ type memoryServer struct {
 }
 
 // RegisterMemorySkeleton wires a real Memory object behind the generic service.
-func RegisterMemorySkeleton(s *grpc.Server, real contracts.Memory) {
-	routerFor(s).add(PortMemory, &memoryServer{real: real})
+func RegisterMemorySkeleton(r *PluginRouter, real contracts.Memory) {
+	r.add(PortMemory, &memoryServer{real: real})
 }
 
 func fail(err error) (*pb.ResultEnvelope, error) {
