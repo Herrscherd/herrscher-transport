@@ -69,7 +69,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server creds: %v", err)
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server creds: %v", err)
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
