@@ -69,7 +69,7 @@ func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return tls.Certificate{}, nil, &CANoCertificateError{File: c.CAFile}
+		return tls.Certificate{}, nil, &CAFileError{File: c.CAFile}
 	}
 	return cert, pool, nil
 }
@@ -78,7 +78,7 @@ func (c TLSConfig) loadCertAndPool() (tls.Certificate, *x509.CertPool, error) {
 // and require+verify a client cert signed by the CA (mutual TLS). Use it on the
 // plugin-host listener when TLS is configured.
 // It returns ErrTLSNotConfigured when no TLS field is set, *TLSHalfConfiguredError
-// on a partial setup, *CANoCertificateError when the CA file holds no certificate,
+// on a partial setup, *CAFileError when the CA file holds no certificate,
 // and a wrapped error when the key pair or the CA file cannot be read.
 func (c TLSConfig) ServerCredentials() (credentials.TransportCredentials, error) {
 	cert, pool, err := c.loadCertAndPool()
@@ -97,7 +97,7 @@ func (c TLSConfig) ServerCredentials() (credentials.TransportCredentials, error)
 // and verify the server against the CA (mutual TLS). The server name is taken
 // from the dial target and matched against the server cert's SANs. It returns
 // the same errors as ServerCredentials: ErrTLSNotConfigured, *TLSHalfConfiguredError,
-// *CANoCertificateError, or a wrapped read error.
+// *CAFileError, or a wrapped read error.
 func (c TLSConfig) ClientCredentials() (credentials.TransportCredentials, error) {
 	cert, pool, err := c.loadCertAndPool()
 	if err != nil {

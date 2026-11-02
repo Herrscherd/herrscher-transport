@@ -7,7 +7,7 @@ import (
 )
 
 // ErrInvalidFrame is returned by a backend stream when a frame is neither an event nor the final done frame.
-var ErrInvalidFrame = errors.New("backend: invalid frame (neither event nor done)")
+var ErrInvalidFrame = errors.New("transport: invalid frame (neither event nor done)")
 
 // ErrTLSNotConfigured is returned when TLS is required but no TLS configuration is set.
 var ErrTLSNotConfigured = errors.New("transport: TLS not configured")
@@ -60,12 +60,12 @@ func (e *TLSHalfConfiguredError) Error() string {
 	return fmt.Sprintf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(e.Missing, ", "))
 }
 
-// CANoCertificateError reports a CA file that holds no usable certificate.
-type CANoCertificateError struct {
+// CAFileError reports a CA file that holds no usable certificate.
+type CAFileError struct {
 	File string
 }
 
-func (e *CANoCertificateError) Error() string {
+func (e *CAFileError) Error() string {
 	return fmt.Sprintf("transport: CA %q held no usable certificate", e.File)
 }
 
