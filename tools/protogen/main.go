@@ -51,6 +51,11 @@ const (
 	exitIOError = 74
 )
 
+const (
+	generatedDirMode  = 0o750
+	generatedFileMode = 0o600
+)
+
 var (
 	errUsage          = errors.New("bad command line")
 	errUnreadable     = errors.New("cannot read the proto file")
@@ -247,10 +252,10 @@ func checkOutputs(wanted []string, files []*pluginpb.CodeGeneratorResponse_File)
 func writeFiles(goOut string, files []*pluginpb.CodeGeneratorResponse_File) error {
 	for _, file := range files {
 		target := filepath.Join(goOut, file.GetName())
-		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), generatedDirMode); err != nil {
 			return fmt.Errorf("%w: %w", errWrite, err)
 		}
-		if err := os.WriteFile(target, []byte(file.GetContent()), 0o600); err != nil {
+		if err := os.WriteFile(target, []byte(file.GetContent()), generatedFileMode); err != nil {
 			return fmt.Errorf("%w: %w", errWrite, err)
 		}
 	}
