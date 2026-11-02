@@ -10,10 +10,11 @@ import (
 	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 func TestDecodeArgsRejectsArityMismatch(t *testing.T) {
@@ -184,9 +185,11 @@ func TestObserveDropsUnqueryableAnnouncements(t *testing.T) {
 		ann  Announcement
 	}{
 		{name: "empty instance id", ann: Announcement{
-			Manifest: contracts.Manifest{Category: contracts.CategoryMemory}, GrpcAddr: "127.0.0.1:9001"}},
+			Manifest: contracts.Manifest{Category: contracts.CategoryMemory}, GrpcAddr: "127.0.0.1:9001",
+		}},
 		{name: "empty category", ann: Announcement{
-			InstanceID: "a", GrpcAddr: "127.0.0.1:9001"}},
+			InstanceID: "a", GrpcAddr: "127.0.0.1:9001",
+		}},
 		{name: "port only address", ann: memAnnounce("a", ":50051")},
 		{name: "host only address", ann: memAnnounce("a", "127.0.0.1:")},
 	}

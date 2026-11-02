@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 type pluginRouter struct {

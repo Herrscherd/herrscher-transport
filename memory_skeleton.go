@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 // PortMemory names the memory port on the wire.

@@ -8,8 +8,9 @@ import (
 	"sync"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 // PortBackend names the model edge on the wire. Unlike memory/orchestrator

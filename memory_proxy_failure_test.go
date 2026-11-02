@@ -7,9 +7,10 @@ import (
 	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 func TestProxyErrorsWhenPeerDown(t *testing.T) {

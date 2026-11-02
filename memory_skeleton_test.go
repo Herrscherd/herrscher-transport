@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 

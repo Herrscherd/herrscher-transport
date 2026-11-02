@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
-	pb "github.com/Herrscherd/herrscher-transport/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
 // fakeBackend emits a fixed event sequence then returns a reply/error, recording

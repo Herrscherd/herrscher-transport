@@ -7,9 +7,11 @@ import (
 )
 
 func TestCodecRoundTripNode(t *testing.T) {
-	in := contracts.Node{Key: "sessions/x", Kind: contracts.KindSession, Title: "X",
+	in := contracts.Node{
+		Key: "sessions/x", Kind: contracts.KindSession, Title: "X",
 		Body: "hi", Links: []contracts.Link{{To: "a", Rel: "depends-on"}},
-		Meta: map[string]string{"k": "v"}}
+		Meta: map[string]string{"k": "v"},
+	}
 	b, err := Marshal(in)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
