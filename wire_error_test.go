@@ -23,7 +23,7 @@ func (b *budgetMem) Record(_ context.Context, n contracts.Node) error {
 func TestTypedErrorSurvivesTheWire(t *testing.T) {
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	registerMemory(t, NewPluginRouter(s), &budgetMem{})
+	registerMemory(t, newRouter(t, s), &budgetMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 

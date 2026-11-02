@@ -12,8 +12,13 @@ var ErrInvalidFrame = errors.New("transport: invalid frame (neither event nor do
 // ErrTLSNotConfigured is returned when TLS is required but no TLS configuration is set.
 var ErrTLSNotConfigured = errors.New("transport: TLS not configured")
 
+// ErrPortRegistered is returned when a skeleton is registered on a port that its router already serves.
 var ErrPortRegistered = errors.New("transport: port already registered")
 
+// ErrPluginServiceRegistered is returned by NewPluginRouter when the server already serves the Plugin service.
+var ErrPluginServiceRegistered = errors.New("transport: Plugin service already registered on this server")
+
+// ErrNilHook is returned by WatchAnnouncements when either hook is nil.
 var ErrNilHook = errors.New("transport: nil announcement hook")
 
 // UnknownPortError reports a request addressed to a port that no service serves.

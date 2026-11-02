@@ -33,16 +33,21 @@ service, served by one `*PluginRouter` per gRPC server. Backend has its own
 streaming service and registers on the `*grpc.Server` directly:
 
 ```go
-router := transport.NewPluginRouter(s)
-err := transport.RegisterMemorySkeleton(router, real)
+router, err := transport.NewPluginRouter(s)
+if err != nil {
+	return err
+}
+if err := transport.RegisterMemorySkeleton(router, real); err != nil {
+	return err
+}
 transport.RegisterBackendSkeleton(s, backend)
 ```
 
-`RegisterMemorySkeleton` and `RegisterOrchestratorSkeleton` return
-`ErrPortRegistered` when their port is already registered on the router. Call
-`NewPluginRouter` once per server. `DialMemory(ctx, entry, creds)` returns a
+`NewPluginRouter` returns `ErrPluginServiceRegistered` when the server already
+serves the Plugin service, so call it once per server. `RegisterMemorySkeleton`
+and `RegisterOrchestratorSkeleton` return `ErrPortRegistered` when their port is
+already registered on the router. `DialMemory(ctx, entry, creds)` returns a
 `contracts.Memory` proxy that owns its connection and releases it on `Close`.
-
 
 Adding a method never touches the `.proto`. The method name and a JSON argument
 tuple ride inside `MethodEnvelope`.
@@ -53,8 +58,8 @@ the gRPC error instead.
 ## Discovery and trust
 
 A plugin publishes an `Announcement` (its manifest, gRPC address and instance id)
-on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`; its decode-error hook is required.
-
+on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`. Both of its hooks are
+required: a nil hook is refused with `ErrNilHook`.
 
 NATS core pub-sub has no replay, so the publisher is expected to re-announce
 periodically. This module only publishes what it is told to.

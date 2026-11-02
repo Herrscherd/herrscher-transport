@@ -3,10 +3,11 @@ package transport
 import (
 	"context"
 	"errors"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
 	"net"
 	"testing"
+
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
@@ -14,8 +15,16 @@ import (
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
 
+func TestNewPluginRouterRefusesASecondPluginServiceOnAServer(t *testing.T) {
+	server := grpc.NewServer()
+	newRouter(t, server)
+	if _, err := NewPluginRouter(server); !errors.Is(err, ErrPluginServiceRegistered) {
+		t.Fatalf("second Plugin service on one server: want ErrPluginServiceRegistered, got %v", err)
+	}
+}
+
 func TestPluginRouterRefusesASecondRegistrationOfAPort(t *testing.T) {
-	router := NewPluginRouter(grpc.NewServer())
+	router := newRouter(t, grpc.NewServer())
 	registerMemory(t, router, &fakeMem{})
 	if err := RegisterMemorySkeleton(router, &fakeMem{}); !errors.Is(err, ErrPortRegistered) {
 		t.Fatalf("second memory registration: want ErrPortRegistered, got %v", err)
@@ -27,9 +36,8 @@ func TestPluginRouterRefusesASecondRegistrationOfAPort(t *testing.T) {
 }
 
 func TestPluginRouterAnswersEverySkeletonRegisteredOnIt(t *testing.T) {
-
 	mem := &fakeMem{}
-	router := NewPluginRouter(grpc.NewServer())
+	router := newRouter(t, grpc.NewServer())
 	registerMemory(t, router, mem)
 	registerOrchestrator(t, router, &stubOrchestrator{})
 
@@ -74,7 +82,7 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	s := grpc.NewServer()
 	mem := &fakeMem{}
 	orch := &stubOrchestrator{}
-	router := NewPluginRouter(s)
+	router := newRouter(t, s)
 	registerMemory(t, router, mem)
 	registerOrchestrator(t, router, orch)
 	serveInBackground(t, s, lis)
@@ -106,5 +114,4 @@ func TestMemoryAndOrchestratorSkeletonsShareOneServer(t *testing.T) {
 	if !errors.As(decodeWireError(res.JsonPayload, res.Error), &remote) || remote.message != "transport: unknown port \"nope\"" {
 		t.Fatalf("want unknown port rejected, got %q", res.Error)
 	}
-
 }

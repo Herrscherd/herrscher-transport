@@ -21,14 +21,15 @@ type PluginRouter struct {
 }
 
 // NewPluginRouter registers the Plugin service on server and returns the router that
-// answers it. Call it once per server: grpc treats a second registration of the
-// Plugin service on the same server as fatal (it logs and exits), so a second router
-// needs a second server.
-
-func NewPluginRouter(server *grpc.Server) *PluginRouter {
+// answers it. It returns ErrPluginServiceRegistered when server already serves the
+// Plugin service, so a second router needs a second server.
+func NewPluginRouter(server *grpc.Server) (*PluginRouter, error) {
+	if _, registered := server.GetServiceInfo()[pb.Plugin_ServiceDesc.ServiceName]; registered {
+		return nil, ErrPluginServiceRegistered
+	}
 	router := &PluginRouter{ports: make(map[string]pb.PluginServer)}
 	pb.RegisterPluginServer(server, router)
-	return router
+	return router, nil
 }
 
 func (r *PluginRouter) add(port string, skeleton pb.PluginServer) error {

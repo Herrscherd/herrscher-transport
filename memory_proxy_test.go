@@ -17,7 +17,7 @@ func dialSkeleton(t *testing.T, impl contracts.Memory) pb.PluginClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	registerMemory(t, NewPluginRouter(s), impl)
+	registerMemory(t, newRouter(t, s), impl)
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
@@ -62,7 +62,7 @@ func TestProxyCloseKeepsSharedRealAndPeersAlive(t *testing.T) {
 	fake := &fakeMem{}
 	lis := bufconn.Listen(1 << 20)
 	s := grpc.NewServer()
-	registerMemory(t, NewPluginRouter(s), fake)
+	registerMemory(t, newRouter(t, s), fake)
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 

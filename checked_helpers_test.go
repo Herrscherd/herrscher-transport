@@ -62,3 +62,12 @@ func registerOrchestrator(tb testing.TB, router *PluginRouter, impl contracts.Or
 		tb.Fatalf("register orchestrator skeleton: %v", err)
 	}
 }
+
+func newRouter(tb testing.TB, server *grpc.Server) *PluginRouter {
+	tb.Helper()
+	router, err := NewPluginRouter(server)
+	if err != nil {
+		tb.Fatalf("new plugin router: %v", err)
+	}
+	return router
+}

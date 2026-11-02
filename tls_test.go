@@ -65,7 +65,6 @@ func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []st
 			t.Fatalf("error %v must name the missing field %q", err, n)
 		}
 	}
-
 }
 
 func TestMTLSRoundTrip(t *testing.T) {
@@ -82,7 +81,7 @@ func TestMTLSRoundTrip(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	registerMemory(t, NewPluginRouter(s), &fakeMem{})
+	registerMemory(t, newRouter(t, s), &fakeMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
@@ -115,7 +114,7 @@ func TestMTLSRejectsNoClientCert(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	s := grpc.NewServer(grpc.Creds(sc))
-	registerMemory(t, NewPluginRouter(s), &fakeMem{})
+	registerMemory(t, newRouter(t, s), &fakeMem{})
 	serveInBackground(t, s, lis)
 	t.Cleanup(s.Stop)
 
