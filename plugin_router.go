@@ -11,6 +11,7 @@ import (
 
 type pluginRouter struct {
 	pb.UnimplementedPluginServer
+
 	mu    sync.RWMutex
 	ports map[string]pb.PluginServer
 }

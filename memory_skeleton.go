@@ -14,6 +14,7 @@ const PortMemory = "memory"
 
 type memoryServer struct {
 	pb.UnimplementedPluginServer
+
 	real contracts.Memory
 }
 

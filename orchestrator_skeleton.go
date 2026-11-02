@@ -14,6 +14,7 @@ const PortOrchestrator = "orchestrator"
 
 type orchestratorServer struct {
 	pb.UnimplementedPluginServer
+
 	real contracts.Orchestrator
 }
 
