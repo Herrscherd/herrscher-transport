@@ -182,6 +182,9 @@ linters:
       - path: ^(cmd|tools)/
         linters: [gosec]
         text: "^G(304|703):"
+      - path: ^tools/protogen/main\.go$
+        linters: [gosec]
+        text: "^G204:"
 
 formatters:
   enable:
