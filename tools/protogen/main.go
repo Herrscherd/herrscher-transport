@@ -247,10 +247,10 @@ func checkOutputs(wanted []string, files []*pluginpb.CodeGeneratorResponse_File)
 func writeFiles(goOut string, files []*pluginpb.CodeGeneratorResponse_File) error {
 	for _, file := range files {
 		target := filepath.Join(goOut, file.GetName())
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 			return fmt.Errorf("%w: %w", errWrite, err)
 		}
-		if err := os.WriteFile(target, []byte(file.GetContent()), 0o644); err != nil {
+		if err := os.WriteFile(target, []byte(file.GetContent()), 0o600); err != nil {
 			return fmt.Errorf("%w: %w", errWrite, err)
 		}
 	}
