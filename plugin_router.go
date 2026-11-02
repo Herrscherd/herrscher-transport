@@ -3,12 +3,39 @@ package transport
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
+	"weak"
 
 	"google.golang.org/grpc"
 
 	pb "github.com/Herrscherd/herrscher-transport/proto"
 )
+
+type pluginClaims struct {
+	mu      sync.Mutex
+	servers map[weak.Pointer[grpc.Server]]struct{}
+}
+
+var pluginServerClaims = &pluginClaims{servers: make(map[weak.Pointer[grpc.Server]]struct{})}
+
+func (c *pluginClaims) claim(server *grpc.Server) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := weak.Make(server)
+	if _, claimed := c.servers[key]; claimed {
+		return ErrPluginServiceRegistered
+	}
+	c.servers[key] = struct{}{}
+	runtime.AddCleanup(server, c.release, key)
+	return nil
+}
+
+func (c *pluginClaims) release(key weak.Pointer[grpc.Server]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.servers, key)
+}
 
 // PluginRouter dispatches the generic Plugin service to the skeletons
 // registered on it, one port each. Create one per gRPC server with
@@ -21,11 +48,13 @@ type PluginRouter struct {
 }
 
 // NewPluginRouter registers the Plugin service on server and returns the router that
-// answers it. It returns ErrPluginServiceRegistered when server already serves the
-// Plugin service, so a second router needs a second server.
+// answers it. It returns ErrPluginServiceRegistered when a router already exists for
+// server, so a second router needs a second server. It must be called before
+// server.Serve: once the server serves, grpc exits the process on the registration,
+// and this error return cannot detect that state.
 func NewPluginRouter(server *grpc.Server) (*PluginRouter, error) {
-	if _, registered := server.GetServiceInfo()[pb.Plugin_ServiceDesc.ServiceName]; registered {
-		return nil, ErrPluginServiceRegistered
+	if err := pluginServerClaims.claim(server); err != nil {
+		return nil, err
 	}
 	router := &PluginRouter{ports: make(map[string]pb.PluginServer)}
 	pb.RegisterPluginServer(server, router)

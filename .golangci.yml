@@ -186,6 +186,8 @@ linters:
       - path: ^tools/protogen/main\.go$
         linters: [gosec]
         text: "^G204:"
+      - path: ^plugin_router\.go$
+        linters: [gochecknoglobals]
 
 formatters:
   enable:
