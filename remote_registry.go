@@ -44,7 +44,7 @@ func WithAddrAllow(allow func(addr string) bool) RegistryOption {
 
 // NewRemoteRegistry returns an empty registry of remote plugin instances.
 func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
-	r := &RemoteRegistry{entries: map[string]RemoteEntry{}}
+	r := &RemoteRegistry{entries: make(map[string]RemoteEntry)}
 	for _, o := range opts {
 		o(r)
 	}

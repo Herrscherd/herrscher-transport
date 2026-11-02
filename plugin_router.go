@@ -22,7 +22,7 @@ type PluginRouter struct {
 // NewPluginRouter registers the Plugin service on s and returns the router that
 // answers it.
 func NewPluginRouter(s *grpc.Server) *PluginRouter {
-	r := &PluginRouter{ports: map[string]pb.PluginServer{}}
+	r := &PluginRouter{ports: make(map[string]pb.PluginServer)}
 	pb.RegisterPluginServer(s, r)
 	return r
 }
