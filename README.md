@@ -23,8 +23,9 @@ go get github.com/Herrscherd/herrscher-transport
 
 None. This module reads no environment variable.
 
-TLS is passed in as a `TLSConfig` value (`CAFile`, `CertFile`, `KeyFile`), and
-NATS as an already-connected `*nats.Conn`.
+TLS is passed in as a `TLSConfig` value (`CAFile`, `CertFile`, `KeyFile`), NATS
+as an already-connected `*nats.Conn`, and the announce secret as an
+`AnnounceKey` built by `ParseAnnounceKey`.
 
 ## Proxy and skeleton
 
@@ -59,22 +60,41 @@ the gRPC error instead.
 
 ## Discovery and trust
 
-A plugin publishes an `Announcement` (its manifest, gRPC address and instance id)
-on `plugins.announce`, and `WatchAnnouncements` feeds a `RemoteRegistry`. Both of its hooks are
-required: a nil hook is refused with `ErrNilHook`.
+A plugin publishes an `Announcement` (its manifest, gRPC address and instance
+id) on `plugins.announce` with `Announce(conn, ann, key)`. The announcement is
+sealed in an envelope: its body is authenticated with HMAC-SHA256 under an
+`AnnounceKey` that the host and its plugin processes share, and stamped with
+its issue time. `ParseAnnounceKey` refuses a secret shorter than 32 bytes
+(`ErrWeakAnnounceKey`).
 
-NATS core pub-sub has no replay, so the publisher is expected to re-announce
-periodically. This module only publishes what it is told to.
+`WatchAnnouncements(conn, key, onAnnouncement, onRejected)` delivers only the
+announcements whose MAC verifies and whose issue time lies within
+`AnnounceWindow` (ten seconds) of the receiver's clock. Every other message goes
+to `onRejected`, as `ErrUnauthenticatedAnnouncement` (unsigned, tampered or
+signed with another key) or `ErrStaleAnnouncement`. Both hooks are required
+(`ErrNilHook`), and so is a non-zero key (`ErrNoAnnounceKey`), on both `Announce`
+and `WatchAnnouncements`.
 
-The announce bus is unauthenticated. Without `WithAddrAllow`, `RemoteRegistry`
-accepts any well formed announcement, so any process that can reach the bus, a
-local one included, can announce itself and take over a category.
-`NewRemoteRegistry(WithAddrAllow(fn))` drops announcements whose address the
-allowlist rejects. Dialing with `nil` credentials is refused for any non-loopback
-address.
+`RemoteRegistry` is a second gate, and it fails closed. `NewRemoteRegistry()`
+refuses every announcement until `WithAddrAllow(fn)` supplies an address
+allowlist. An address allowlist alone does not identify a plugin: a plugin-host
+listens on an ephemeral port by default, and any local process can bind a
+loopback port, so a loopback allowlist is never the only gate. The authenticated
+key is what identifies a plugin.
 
-`TLSConfig` requires CA, cert and key together, which is mutual TLS. Any partial
-set is an error rather than a silent downgrade to plaintext.
+NATS core pub-sub has no replay, so the publisher re-announces periodically.
+Hosts and plugins on different machines must keep their clocks within
+`AnnounceWindow` of each other (NTP).
+
+Residual risks, which the key does not remove:
+
+- Any process holding the key can announce any category. The key is shared by
+  every process that announces, so one plugin can impersonate another. Per-plugin
+  keys bound to their category are the follow-up.
+- A captured announcement can be replayed within `AnnounceWindow`, to a
+  listener that has taken over the address it names.
+- The gRPC connection that follows is authenticated only by `TLSConfig`. Dialing
+  a loopback address stays plaintext and does not prove the server's identity.
 
 ## Further reading
 

@@ -21,6 +21,18 @@ var ErrPluginServiceRegistered = errors.New("transport: Plugin service already r
 // ErrNilHook is returned by WatchAnnouncements when either hook is nil.
 var ErrNilHook = errors.New("transport: nil announcement hook")
 
+// ErrNoAnnounceKey is returned when an announcement is sent, watched or opened with the zero AnnounceKey.
+var ErrNoAnnounceKey = errors.New("transport: no announce key")
+
+// ErrWeakAnnounceKey is returned by ParseAnnounceKey when the secret is shorter than 32 bytes.
+var ErrWeakAnnounceKey = errors.New("transport: announce key shorter than 32 bytes")
+
+// ErrUnauthenticatedAnnouncement is returned for an announcement whose MAC does not verify under the watcher's key: unsigned, tampered with, or signed with another key.
+var ErrUnauthenticatedAnnouncement = errors.New("transport: announcement failed authentication")
+
+// ErrStaleAnnouncement is returned for an authentic announcement whose issue time lies outside AnnounceWindow of the receiver's clock.
+var ErrStaleAnnouncement = errors.New("transport: announcement outside the freshness window")
+
 // UnknownPortError reports a request addressed to a port that no service serves.
 type UnknownPortError struct {
 	Port string

@@ -17,8 +17,10 @@ func memAnnounce(id, addr string) Announcement {
 	}
 }
 
+func allowAll(string) bool { return true }
+
 func TestObserveDropsUnusableAddr(t *testing.T) {
-	r := NewRemoteRegistry()
+	r := NewRemoteRegistry(WithAddrAllow(allowAll))
 	r.Observe(memAnnounce("a", ""))
 	r.Observe(memAnnounce("b", "not-a-host-port"))
 	if got := r.Memories(); len(got) != 0 {
@@ -39,11 +41,20 @@ func TestObserveAllowlistFailsClosed(t *testing.T) {
 	}
 }
 
-func TestObserveWithoutAllowlistAcceptsWellFormed(t *testing.T) {
+func TestObserveWithoutAllowlistRefusesEverything(t *testing.T) {
 	r := NewRemoteRegistry()
-	r.Observe(memAnnounce("a", "10.0.0.5:9000"))
-	if got := r.Memories(); len(got) != 1 {
-		t.Fatalf("want well-formed address accepted, got %+v", got)
+	r.Observe(memAnnounce("a", "127.0.0.1:9000"))
+	r.Observe(memAnnounce("b", "10.0.0.5:9000"))
+	if got := r.Memories(); len(got) != 0 {
+		t.Fatalf("want no announcement accepted without an allowlist, got %+v", got)
+	}
+}
+
+func TestObserveNilAllowlistRefusesEverything(t *testing.T) {
+	r := NewRemoteRegistry(WithAddrAllow(nil))
+	r.Observe(memAnnounce("a", "127.0.0.1:9000"))
+	if got := r.Memories(); len(got) != 0 {
+		t.Fatalf("want a nil allowlist to refuse every announcement, got %+v", got)
 	}
 }
 
@@ -85,7 +96,7 @@ func TestObserveDropsUnqueryableAnnouncements(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := NewRemoteRegistry()
+			r := NewRemoteRegistry(WithAddrAllow(allowAll))
 			r.Observe(tc.ann)
 			r.mu.RLock()
 			n := len(r.entries)
@@ -98,7 +109,7 @@ func TestObserveDropsUnqueryableAnnouncements(t *testing.T) {
 }
 
 func TestObserveKeepsDistinctInstancesWithoutCollapsing(t *testing.T) {
-	r := NewRemoteRegistry()
+	r := NewRemoteRegistry(WithAddrAllow(allowAll))
 	r.Observe(memAnnounce("", "127.0.0.1:9001"))
 	r.Observe(memAnnounce("", "127.0.0.1:9002"))
 	if got := r.Memories(); len(got) != 0 {
