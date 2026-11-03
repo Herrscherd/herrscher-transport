@@ -45,6 +45,7 @@ type Announcement struct {
 // unusable: every operation given it fails with ErrNoAnnounceKey. It prints as a
 // fixed mask under fmt and log/slog, and its bytes appear in no formatted output.
 type AnnounceKey struct {
+	_        [0]func()
 	material *announceSecret
 }
 
