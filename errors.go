@@ -18,20 +18,32 @@ var ErrPortRegistered = errors.New("transport: port already registered")
 // ErrPluginServiceRegistered is returned by NewPluginRouter when the server already serves the Plugin service.
 var ErrPluginServiceRegistered = errors.New("transport: Plugin service already registered on this server")
 
-// ErrNilHook is returned by WatchAnnouncements when either hook is nil.
+// ErrNilHook is returned by WatchAnnouncements and Watch when a hook is nil.
 var ErrNilHook = errors.New("transport: nil announcement hook")
 
 // ErrNoAnnounceKey is returned when an announcement is sent, watched or opened with the zero AnnounceKey.
 var ErrNoAnnounceKey = errors.New("transport: no announce key")
 
-// ErrWeakAnnounceKey is returned by ParseAnnounceKey when the secret is shorter than 32 bytes.
-var ErrWeakAnnounceKey = errors.New("transport: announce key shorter than 32 bytes")
+// ErrWeakAnnounceKey is returned by ParseAnnounceKey when the secret is shorter than 32 bytes or holds only zero bytes.
+var ErrWeakAnnounceKey = errors.New("transport: announce key shorter than 32 bytes or all zero")
 
 // ErrUnauthenticatedAnnouncement is returned for an announcement whose MAC does not verify under the watcher's key: unsigned, tampered with, or signed with another key.
 var ErrUnauthenticatedAnnouncement = errors.New("transport: announcement failed authentication")
 
 // ErrStaleAnnouncement is returned for an authentic announcement whose issue time lies outside AnnounceWindow of the receiver's clock.
 var ErrStaleAnnouncement = errors.New("transport: announcement outside the freshness window")
+
+// ErrOversizedAnnouncement is returned for a message larger than the announcement size bound, before it is parsed.
+var ErrOversizedAnnouncement = errors.New("transport: announcement exceeds the size bound")
+
+// ErrMalformedAnnouncement is returned for a message that is not a single JSON envelope with no unknown field, or whose body is not a single JSON announcement.
+var ErrMalformedAnnouncement = errors.New("transport: malformed announcement")
+
+// ErrUnusableAnnouncement is returned by Watch for an authentic announcement that lacks an instance id, a category, or a host:port gRPC address.
+var ErrUnusableAnnouncement = errors.New("transport: announcement lacks an instance id, a category or a host:port address")
+
+// ErrAddrRefused is returned by Watch for an authentic announcement whose gRPC address the allowlist refuses, or when no allowlist is set.
+var ErrAddrRefused = errors.New("transport: announced address refused by the allowlist")
 
 // UnknownPortError reports a request addressed to a port that no service serves.
 type UnknownPortError struct {

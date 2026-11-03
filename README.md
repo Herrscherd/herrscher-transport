@@ -64,23 +64,46 @@ A plugin publishes an `Announcement` (its manifest, gRPC address and instance
 id) on `plugins.announce` with `Announce(conn, ann, key)`. The announcement is
 sealed in an envelope: its body is authenticated with HMAC-SHA256 under an
 `AnnounceKey` that the host and its plugin processes share, and stamped with
-its issue time. `ParseAnnounceKey` refuses a secret shorter than 32 bytes
-(`ErrWeakAnnounceKey`).
+its issue time. The key is built by `ParseAnnounceKey` from at least 32 bytes
+that are not all zero, generated with `crypto/rand`: a guessable secret lets
+anyone forge an announcement. `AnnounceKey` prints as a fixed mask under `fmt`
+and `log/slog`, so its bytes never reach a log.
 
-`WatchAnnouncements(conn, key, onAnnouncement, onRejected)` delivers only the
-announcements whose MAC verifies and whose issue time lies within
-`AnnounceWindow` (ten seconds) of the receiver's clock. Every other message goes
-to `onRejected`, as `ErrUnauthenticatedAnnouncement` (unsigned, tampered or
-signed with another key) or `ErrStaleAnnouncement`. Both hooks are required
-(`ErrNilHook`), and so is a non-zero key (`ErrNoAnnounceKey`), on both `Announce`
-and `WatchAnnouncements`.
+A watcher checks each message in this order, and a message that fails a check
+goes no further:
 
-`RemoteRegistry` is a second gate, and it fails closed. `NewRemoteRegistry()`
+1. Size: a message over 32 KiB is refused with `ErrOversizedAnnouncement`
+   before it is parsed.
+2. Shape: the envelope and the announcement are decoded strictly. An unknown
+   field or trailing data is refused with `ErrMalformedAnnouncement`.
+3. Authentication: the MAC must verify under the watcher's key, or the message
+   fails with `ErrUnauthenticatedAnnouncement` (unsigned, tampered or signed
+   with another key).
+4. Freshness: the issue time must lie within `AnnounceWindow` (ten seconds) of
+   the receiver's clock, edges included, or the message fails with
+   `ErrStaleAnnouncement`.
+
+`WatchAnnouncements(conn, key, onAnnouncement, onRejected)` delivers the
+messages that pass all four checks to `onAnnouncement`. It returns the
+`*nats.Subscription`, which stops delivery when unsubscribed.
+
+`RemoteRegistry` is the second gate, and it fails closed. `NewRemoteRegistry()`
 refuses every announcement until `WithAddrAllow(fn)` supplies an address
-allowlist. An address allowlist alone does not identify a plugin: a plugin-host
-listens on an ephemeral port by default, and any local process can bind a
-loopback port, so a loopback allowlist is never the only gate. The authenticated
-key is what identifies a plugin.
+allowlist. `(*RemoteRegistry).Watch(conn, key, onRejected)` subscribes the
+registry itself: it authenticates each message under the key before its address
+reaches the allowlist, and records only the announcements that pass both. An
+address allowlist alone does not identify a plugin: a plugin-host listens on an
+ephemeral port by default, and any local process can bind a loopback port, so a
+loopback allowlist is never the only gate. The authenticated key is what
+identifies a plugin.
+
+Every message that is not recorded or delivered goes to `onRejected` exactly
+once, with one of the errors above or with `ErrUnusableAnnouncement` (no
+instance id, no category, or no `host:port` address) or `ErrAddrRefused` (the
+allowlist refuses the address). Both hooks run on the NATS subscription
+goroutine, one call per message, so they must return quickly. Both are required
+(`ErrNilHook`), and so is a non-zero key (`ErrNoAnnounceKey`), on `Watch` and
+`WatchAnnouncements` alike. `Announce` refuses the zero key too.
 
 NATS core pub-sub has no replay, so the publisher re-announces periodically.
 Hosts and plugins on different machines must keep their clocks within
@@ -95,6 +118,11 @@ Residual risks, which the key does not remove:
   listener that has taken over the address it names.
 - The gRPC connection that follows is authenticated only by `TLSConfig`. Dialing
   a loopback address stays plaintext and does not prove the server's identity.
+
+Dialing with `nil` credentials is refused for any non-loopback address.
+
+`TLSConfig` requires CA, cert and key together, which is mutual TLS. Any partial
+set is an error rather than a silent downgrade to plaintext.
 
 ## Further reading
 
