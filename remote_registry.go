@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -32,19 +33,17 @@ type RemoteRegistry struct {
 // RegistryOption configures a RemoteRegistry at construction.
 type RegistryOption func(*RemoteRegistry)
 
-// WithAddrAllow restricts Observe to announcements whose GrpcAddr satisfies allow.
-// The NATS announce bus is unauthenticated: without a constraint any participant
-// can publish a rogue Announcement and hijack a category, redirecting real turn
-// traffic (prompts, recalled memory, replies) to an attacker address. Passing an
-// allowlist (known plugin hosts, loopback-only, …) makes Observe drop everything
-// else, failing closed.
+// WithAddrAllow sets the address gate of a RemoteRegistry: Watch records only
+// announcements whose GrpcAddr satisfies allow, and refuses the others with
+// ErrAddrRefused. The gate is required, since a registry without it refuses every
+// announcement. Authentication is a separate gate, applied before this one.
 func WithAddrAllow(allow func(addr string) bool) RegistryOption {
 	return func(r *RemoteRegistry) { r.allow = allow }
 }
 
-// NewRemoteRegistry returns an empty registry of remote plugin instances.
-// Without WithAddrAllow the registry accepts any well formed announcement, so a
-// local process can announce itself and take over a category.
+// NewRemoteRegistry returns an empty registry of remote plugin instances. It
+// fails closed: without WithAddrAllow, or with a nil allow function, every
+// announcement is refused.
 func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
 	registry := &RemoteRegistry{entries: make(map[string]RemoteEntry)}
 	for _, o := range opts {
@@ -53,21 +52,38 @@ func NewRemoteRegistry(opts ...RegistryOption) *RemoteRegistry {
 	return registry
 }
 
-// Observe records the remote plugin instance that announcement describes. It ignores an announcement without an instance id or a category, one whose gRPC address is not host:port, and one whose address the allowlist refuses.
-func (r *RemoteRegistry) Observe(announcement Announcement) {
+// Watch subscribes r to SubjectAnnounce on conn and records the authentic
+// announcements that pass the allowlist. Each message is authenticated under key
+// before its address is looked at, so an unsigned message never reaches the
+// allowlist. A message that is not recorded goes to onRejected exactly once, with
+// ErrUnauthenticatedAnnouncement, ErrStaleAnnouncement, ErrOversizedAnnouncement,
+// ErrMalformedAnnouncement, ErrUnusableAnnouncement or ErrAddrRefused. onRejected
+// runs on the NATS subscription goroutine, so it must return quickly. It returns
+// the subscription, which stops delivery when unsubscribed. It fails with
+// ErrNilHook, ErrNoAnnounceKey, or the NATS subscribe error.
+func (r *RemoteRegistry) Watch(conn *nats.Conn, key AnnounceKey, onRejected func(error)) (*nats.Subscription, error) {
+	return subscribeAnnouncements(conn, key, func(announcement Announcement) {
+		if err := r.observe(announcement); err != nil {
+			onRejected(err)
+		}
+	}, onRejected)
+}
+
+func (r *RemoteRegistry) observe(announcement Announcement) error {
 	if announcement.InstanceID == "" || announcement.Manifest.Category == "" {
-		return
+		return ErrUnusableAnnouncement
 	}
 	host, port, err := net.SplitHostPort(announcement.GrpcAddr)
 	if err != nil || host == "" || port == "" {
-		return
+		return ErrUnusableAnnouncement
 	}
-	if r.allow != nil && !r.allow(announcement.GrpcAddr) {
-		return
+	if r.allow == nil || !r.allow(announcement.GrpcAddr) {
+		return ErrAddrRefused
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.entries[announcement.InstanceID] = announcement.entry()
+	return nil
 }
 
 func (r *RemoteRegistry) byCategory(category contracts.Category) []RemoteEntry {
