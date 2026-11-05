@@ -1,11 +1,12 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
-	"slices"
 	"sync"
 	"testing"
 
@@ -87,18 +88,9 @@ func TestBackendStreamRoundTripsEventsThenReply(t *testing.T) {
 }
 
 func sameEvent(a, b contracts.BackendEvent) bool {
-	return a.Kind == b.Kind && a.Tool == b.Tool && a.Detail == b.Detail &&
-		a.Cost == b.Cost && a.IsError == b.IsError &&
-		a.InTokens == b.InTokens && a.OutTokens == b.OutTokens &&
-		a.CacheRead == b.CacheRead && a.CacheCreate == b.CacheCreate &&
-		slices.Equal(a.Todos, b.Todos) && sameSubagent(a.Subagent, b.Subagent)
-}
-
-func sameSubagent(a, b *contracts.Subagent) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
+	left, errLeft := json.Marshal(a)
+	right, errRight := json.Marshal(b)
+	return errLeft == nil && errRight == nil && bytes.Equal(left, right)
 }
 
 func TestBackendStreamSurfacesRespondError(t *testing.T) {
