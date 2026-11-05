@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 
@@ -26,8 +27,8 @@ type fakeBackend struct {
 
 func (f *fakeBackend) Respond(_ context.Context, p contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	f.gotPrompt = p
-	for _, e := range f.events {
-		onEvent(e)
+	for i := range f.events {
+		onEvent(f.events[i])
 	}
 	return f.reply, f.err
 }
@@ -55,6 +56,7 @@ func TestBackendStreamRoundTripsEventsThenReply(t *testing.T) {
 		{Kind: "tool", Tool: "Read", Detail: "file.go"},
 		{Kind: "text", Detail: "thinking…"},
 		{Kind: "result", Cost: 0.42},
+		{Kind: "todo", Todos: []contracts.TodoItem{{Text: "écrire les tests", State: "done"}}, Subagent: &contracts.Subagent{ID: "s1", Name: "relecteur", Kind: "review", State: "running"}},
 	}
 	fake := &fakeBackend{events: want, reply: "final"}
 	proxy, s, conn := serveBackend(t, func(s *grpc.Server) { RegisterBackendSkeleton(s, fake) })
@@ -78,10 +80,25 @@ func TestBackendStreamRoundTripsEventsThenReply(t *testing.T) {
 		t.Fatalf("got %d events, want %d: %+v", len(got), len(want), got)
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if !sameEvent(got[i], want[i]) {
 			t.Fatalf("event %d = %+v, want %+v (ordering must be preserved)", i, got[i], want[i])
 		}
 	}
+}
+
+func sameEvent(a, b contracts.BackendEvent) bool {
+	return a.Kind == b.Kind && a.Tool == b.Tool && a.Detail == b.Detail &&
+		a.Cost == b.Cost && a.IsError == b.IsError &&
+		a.InTokens == b.InTokens && a.OutTokens == b.OutTokens &&
+		a.CacheRead == b.CacheRead && a.CacheCreate == b.CacheCreate &&
+		slices.Equal(a.Todos, b.Todos) && sameSubagent(a.Subagent, b.Subagent)
+}
+
+func sameSubagent(a, b *contracts.Subagent) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func TestBackendStreamSurfacesRespondError(t *testing.T) {
