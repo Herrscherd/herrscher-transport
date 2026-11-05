@@ -9,8 +9,7 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// Environment variables that name the TLS settings an operator sets. The notices
-// of a half-configured TLS setup and of an unusable CA file name them.
+// Environment variables that name the TLS settings.
 const (
 	EnvTLSCA   = "HERRSCHER_TLS_CA"
 	EnvTLSCert = "HERRSCHER_TLS_CERT"

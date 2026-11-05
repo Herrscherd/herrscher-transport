@@ -91,7 +91,7 @@ func (e *PlaintextDialError) Notice() contracts.Notice {
 }
 
 // TLSHalfConfiguredError reports a TLS setup that sets some of the CA, certificate and key but not all of them.
-// Missing lists the environment variables of the settings that are absent.
+// Missing lists the environment variables of the absent settings.
 type TLSHalfConfiguredError struct {
 	Missing []string
 }
@@ -100,8 +100,7 @@ func (e *TLSHalfConfiguredError) Error() string {
 	return fmt.Sprintf("transport: TLS half-configured: %s missing (set %s, %s and %s together, or none for loopback plaintext)", strings.Join(e.Missing, ", "), EnvTLSCA, EnvTLSCert, EnvTLSKey)
 }
 
-// Notice returns the notice listing the environment variables of the TLS settings that are still missing.
-// Without any missing setting it returns CodeUnexpected carrying the error text.
+// Notice returns the notice listing the missing TLS environment variables, or CodeUnexpected when none is missing.
 func (e *TLSHalfConfiguredError) Notice() contracts.Notice {
 	if len(e.Missing) == 0 {
 		return contracts.Notice{Code: contracts.CodeUnexpected, Args: []contracts.Arg{contracts.Text("Detail", e.Error())}}
@@ -118,7 +117,7 @@ func (e *CAFileError) Error() string {
 	return fmt.Sprintf("transport: CA %q held no usable certificate", e.File)
 }
 
-// Notice returns the notice telling a human that the CA file named by File, the path on the operator's machine, holds no usable certificate.
+// Notice returns the notice that the CA file at File holds no usable certificate.
 func (e *CAFileError) Notice() contracts.Notice {
 	return contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", EnvTLSCA), contracts.Text("Value", e.File)}}
 }
