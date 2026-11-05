@@ -67,6 +67,43 @@ func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []st
 	}
 }
 
+func TestTLSHalfConfiguredNotice(t *testing.T) {
+	err := TLSConfig{CAFile: "ca"}.Validate()
+	assertTextNotice(t, err, contracts.CodeSettingMissing, map[string]string{"Settings": "cert, key"})
+}
+
+func TestCAFileNotice(t *testing.T) {
+	dir := genCertPair(t)
+	caPath := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(caPath, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := TLSConfig{CAFile: caPath, CertFile: filepath.Join(dir, "server.pem"), KeyFile: filepath.Join(dir, "server-key.pem")}
+	_, err := cfg.ServerCredentials()
+	assertTextNotice(t, err, contracts.CodeSettingInvalid, map[string]string{"Setting": "CAFile", "Value": caPath})
+}
+
+func assertTextNotice(t *testing.T, err error, want contracts.Code, wantArgs map[string]string) {
+	t.Helper()
+	noticed, ok := errors.AsType[contracts.NoticeError](err)
+	if !ok {
+		t.Fatalf("error %v carries no notice", err)
+	}
+	notice := noticed.Notice()
+	if notice.Code != want {
+		t.Fatalf("notice code = %s, want %s", notice.Code.Key(), want.Key())
+	}
+	if len(notice.Args) != len(wantArgs) {
+		t.Fatalf("notice args = %d, want %d", len(notice.Args), len(wantArgs))
+	}
+	for _, arg := range notice.Args {
+		value, known := wantArgs[arg.Name()]
+		if !known || arg.Kind() != contracts.ArgText || arg.Value() != value {
+			t.Fatalf("notice arg %q of kind %d = %v, want one of %v as text", arg.Name(), arg.Kind(), arg.Value(), wantArgs)
+		}
+	}
+}
+
 func TestMTLSRoundTrip(t *testing.T) {
 	dir := genCertPair(t)
 	serverTLS := TLSConfig{CAFile: filepath.Join(dir, "ca.pem"), CertFile: filepath.Join(dir, "server.pem"), KeyFile: filepath.Join(dir, "server-key.pem")}

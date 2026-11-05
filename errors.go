@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // ErrInvalidFrame is returned by a backend stream when a frame is neither an event nor the final done frame.
@@ -83,6 +85,11 @@ func (e *PlaintextDialError) Error() string {
 	return fmt.Sprintf("transport: refusing plaintext dial to non-loopback address %q; configure TLS for remote plugins", e.Addr)
 }
 
+// Notice returns the notice telling a human that the plaintext dial to Addr was refused.
+func (e *PlaintextDialError) Notice() contracts.Notice {
+	return contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", e.Addr)}}
+}
+
 // TLSHalfConfiguredError reports a TLS setup that sets some of the CA, certificate and key but not all of them.
 // Missing lists the settings that are absent.
 type TLSHalfConfiguredError struct {
@@ -93,6 +100,11 @@ func (e *TLSHalfConfiguredError) Error() string {
 	return fmt.Sprintf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(e.Missing, ", "))
 }
 
+// Notice returns the notice listing the TLS settings that are still missing.
+func (e *TLSHalfConfiguredError) Notice() contracts.Notice {
+	return contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", strings.Join(e.Missing, ", "))}}
+}
+
 // CAFileError reports a CA file that holds no usable certificate.
 type CAFileError struct {
 	File string
@@ -100,6 +112,11 @@ type CAFileError struct {
 
 func (e *CAFileError) Error() string {
 	return fmt.Sprintf("transport: CA %q held no usable certificate", e.File)
+}
+
+// Notice returns the notice telling a human that the CA file holds no usable certificate.
+func (e *CAFileError) Notice() contracts.Notice {
+	return contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", "CAFile"), contracts.Text("Value", e.File)}}
 }
 
 type remoteError struct {
