@@ -9,6 +9,14 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// Environment variables that name the TLS settings an operator sets. The notices
+// of a half-configured TLS setup and of an unusable CA file name them.
+const (
+	EnvTLSCA   = "HERRSCHER_TLS_CA"
+	EnvTLSCert = "HERRSCHER_TLS_CERT"
+	EnvTLSKey  = "HERRSCHER_TLS_KEY"
+)
+
 // TLSConfig points at the PEM files that secure off-loopback transport: a CA to
 // verify the peer, plus this host's own certificate and key (presented to the
 // peer for mutual TLS). All three empty means plaintext: the single-host
@@ -38,13 +46,13 @@ func (c TLSConfig) Validate() error {
 	}
 	var missing []string
 	if c.CAFile == "" {
-		missing = append(missing, "CA")
+		missing = append(missing, EnvTLSCA)
 	}
 	if c.CertFile == "" {
-		missing = append(missing, "cert")
+		missing = append(missing, EnvTLSCert)
 	}
 	if c.KeyFile == "" {
-		missing = append(missing, "key")
+		missing = append(missing, EnvTLSKey)
 	}
 	if len(missing) > 0 {
 		return &TLSHalfConfiguredError{Missing: missing}

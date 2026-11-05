@@ -91,17 +91,21 @@ func (e *PlaintextDialError) Notice() contracts.Notice {
 }
 
 // TLSHalfConfiguredError reports a TLS setup that sets some of the CA, certificate and key but not all of them.
-// Missing lists the settings that are absent.
+// Missing lists the environment variables of the settings that are absent.
 type TLSHalfConfiguredError struct {
 	Missing []string
 }
 
 func (e *TLSHalfConfiguredError) Error() string {
-	return fmt.Sprintf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(e.Missing, ", "))
+	return fmt.Sprintf("transport: TLS half-configured: %s missing (set %s, %s and %s together, or none for loopback plaintext)", strings.Join(e.Missing, ", "), EnvTLSCA, EnvTLSCert, EnvTLSKey)
 }
 
-// Notice returns the notice listing the TLS settings that are still missing.
+// Notice returns the notice listing the environment variables of the TLS settings that are still missing.
+// Without any missing setting it returns CodeUnexpected carrying the error text.
 func (e *TLSHalfConfiguredError) Notice() contracts.Notice {
+	if len(e.Missing) == 0 {
+		return contracts.Notice{Code: contracts.CodeUnexpected, Args: []contracts.Arg{contracts.Text("Detail", e.Error())}}
+	}
 	return contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", strings.Join(e.Missing, ", "))}}
 }
 
@@ -114,9 +118,9 @@ func (e *CAFileError) Error() string {
 	return fmt.Sprintf("transport: CA %q held no usable certificate", e.File)
 }
 
-// Notice returns the notice telling a human that the CA file holds no usable certificate.
+// Notice returns the notice telling a human that the CA file named by File, the path on the operator's machine, holds no usable certificate.
 func (e *CAFileError) Notice() contracts.Notice {
-	return contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", "CAFile"), contracts.Text("Value", e.File)}}
+	return contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", EnvTLSCA), contracts.Text("Value", e.File)}}
 }
 
 type remoteError struct {

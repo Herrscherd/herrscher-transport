@@ -14,10 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts/i18n"
 	"google.golang.org/grpc"
 )
 
@@ -30,12 +32,12 @@ func TestTLSConfigValidate(t *testing.T) {
 	}{
 		{name: "plaintext (none set)", cfg: TLSConfig{}, wantErr: false},
 		{name: "full mTLS (all set)", cfg: TLSConfig{CAFile: "ca", CertFile: "c", KeyFile: "k"}, wantErr: false},
-		{name: "only CA", cfg: TLSConfig{CAFile: "ca"}, wantErr: true, names: []string{"cert", "key"}},
-		{name: "only cert", cfg: TLSConfig{CertFile: "c"}, wantErr: true, names: []string{"CA", "key"}},
-		{name: "only key", cfg: TLSConfig{KeyFile: "k"}, wantErr: true, names: []string{"CA", "cert"}},
-		{name: "CA+cert, no key", cfg: TLSConfig{CAFile: "ca", CertFile: "c"}, wantErr: true, names: []string{"key"}},
-		{name: "CA+key, no cert", cfg: TLSConfig{CAFile: "ca", KeyFile: "k"}, wantErr: true, names: []string{"cert"}},
-		{name: "cert+key, no CA", cfg: TLSConfig{CertFile: "c", KeyFile: "k"}, wantErr: true, names: []string{"CA"}},
+		{name: "only CA", cfg: TLSConfig{CAFile: "ca"}, wantErr: true, names: []string{"HERRSCHER_TLS_CERT", "HERRSCHER_TLS_KEY"}},
+		{name: "only cert", cfg: TLSConfig{CertFile: "c"}, wantErr: true, names: []string{"HERRSCHER_TLS_CA", "HERRSCHER_TLS_KEY"}},
+		{name: "only key", cfg: TLSConfig{KeyFile: "k"}, wantErr: true, names: []string{"HERRSCHER_TLS_CA", "HERRSCHER_TLS_CERT"}},
+		{name: "CA+cert, no key", cfg: TLSConfig{CAFile: "ca", CertFile: "c"}, wantErr: true, names: []string{"HERRSCHER_TLS_KEY"}},
+		{name: "CA+key, no cert", cfg: TLSConfig{CAFile: "ca", KeyFile: "k"}, wantErr: true, names: []string{"HERRSCHER_TLS_CERT"}},
+		{name: "cert+key, no CA", cfg: TLSConfig{CertFile: "c", KeyFile: "k"}, wantErr: true, names: []string{"HERRSCHER_TLS_CA"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,7 +71,7 @@ func assertValidateOutcome(t *testing.T, cfg TLSConfig, wantErr bool, names []st
 
 func TestTLSHalfConfiguredNotice(t *testing.T) {
 	err := TLSConfig{CAFile: "ca"}.Validate()
-	assertTextNotice(t, err, contracts.CodeSettingMissing, map[string]string{"Settings": "cert, key"})
+	assertTextNotice(t, err, contracts.CodeSettingMissing, map[string]string{"Settings": "HERRSCHER_TLS_CERT, HERRSCHER_TLS_KEY"})
 }
 
 func TestCAFileNotice(t *testing.T) {
@@ -80,7 +82,46 @@ func TestCAFileNotice(t *testing.T) {
 	}
 	cfg := TLSConfig{CAFile: caPath, CertFile: filepath.Join(dir, "server.pem"), KeyFile: filepath.Join(dir, "server-key.pem")}
 	_, err := cfg.ServerCredentials()
-	assertTextNotice(t, err, contracts.CodeSettingInvalid, map[string]string{"Setting": "CAFile", "Value": caPath})
+	assertTextNotice(t, err, contracts.CodeSettingInvalid, map[string]string{"Setting": "HERRSCHER_TLS_CA", "Value": caPath})
+}
+
+func TestTLSHalfConfiguredWithoutMissingSettingIsUnexpected(t *testing.T) {
+	noticed := (&TLSHalfConfiguredError{}).Notice()
+	if noticed.Code != contracts.CodeUnexpected || len(noticed.Args) != 1 || noticed.Args[0].Name() != "Detail" {
+		t.Fatalf("notice of an empty half-configuration = %+v, want CodeUnexpected with a Detail", noticed)
+	}
+}
+
+func TestNoticesRenderInEnglishAndFrench(t *testing.T) {
+	dir := genCertPair(t)
+	caPath := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(caPath, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		err     error
+		english string
+	}{
+		{TLSConfig{CAFile: "ca"}.Validate(), "HERRSCHER_TLS_CERT, HERRSCHER_TLS_KEY"},
+		{&CAFileError{File: caPath}, "HERRSCHER_TLS_CA"},
+		{&PlaintextDialError{Addr: "10.0.0.5:9000"}, "10.0.0.5:9000"},
+	}
+	renderer := contracts.NewRenderer()
+	for _, tc := range cases {
+		noticed, ok := errors.AsType[contracts.NoticeError](tc.err)
+		if !ok {
+			t.Fatalf("error %v carries no notice", tc.err)
+		}
+		for _, lang := range []i18n.Language{i18n.English, i18n.French} {
+			text, renderErr := renderer.Render(lang, noticed.Notice())
+			if renderErr != nil || text == "" {
+				t.Fatalf("Render(%v) of %v = %q, %v; want a text and no error", lang, tc.err, text, renderErr)
+			}
+			if lang == i18n.English && !strings.Contains(text, tc.english) {
+				t.Fatalf("English render %q does not name %q", text, tc.english)
+			}
+		}
+	}
 }
 
 func assertTextNotice(t *testing.T, err error, want contracts.Code, wantArgs map[string]string) {
