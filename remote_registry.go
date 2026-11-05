@@ -90,7 +90,8 @@ func (r *RemoteRegistry) byCategory(category contracts.Category) []RemoteEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var out []RemoteEntry
-	for _, entry := range r.entries {
+	for id := range r.entries {
+		entry := r.entries[id]
 		if entry.Manifest.Category == category {
 			out = append(out, entry)
 		}
