@@ -82,6 +82,7 @@ func TestDialConnRefusesPlaintextNonLoopback(t *testing.T) {
 	if _, ok := errors.AsType[*PlaintextDialError](err); !ok {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	assertTextNotice(t, err, contracts.CodeAddressPlaintextRefused, map[string]string{"Address": "10.0.0.5:9000"})
 }
 
 func TestDialConnAllowsPlaintextLoopback(t *testing.T) {

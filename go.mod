@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.3
 
 require (
-	github.com/Herrscherd/herrscher-contracts v0.18.0
+	github.com/Herrscherd/herrscher-contracts v0.19.1
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/nats-io/nats-server/v2 v2.10.22
 	github.com/nats-io/nats.go v1.37.0

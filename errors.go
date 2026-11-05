@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // ErrInvalidFrame is returned by a backend stream when a frame is neither an event nor the final done frame.
@@ -83,14 +85,27 @@ func (e *PlaintextDialError) Error() string {
 	return fmt.Sprintf("transport: refusing plaintext dial to non-loopback address %q; configure TLS for remote plugins", e.Addr)
 }
 
+// Notice returns the notice telling a human that the plaintext dial to Addr was refused.
+func (e *PlaintextDialError) Notice() contracts.Notice {
+	return contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", e.Addr)}}
+}
+
 // TLSHalfConfiguredError reports a TLS setup that sets some of the CA, certificate and key but not all of them.
-// Missing lists the settings that are absent.
+// Missing lists the environment variables of the absent settings.
 type TLSHalfConfiguredError struct {
 	Missing []string
 }
 
 func (e *TLSHalfConfiguredError) Error() string {
-	return fmt.Sprintf("transport: TLS half-configured: %s missing (set CA, cert, and key together, or none for loopback plaintext)", strings.Join(e.Missing, ", "))
+	return fmt.Sprintf("transport: TLS half-configured: %s missing (set %s, %s and %s together, or none for loopback plaintext)", strings.Join(e.Missing, ", "), EnvTLSCA, EnvTLSCert, EnvTLSKey)
+}
+
+// Notice returns the notice listing the missing TLS environment variables, or CodeUnexpected when none is missing.
+func (e *TLSHalfConfiguredError) Notice() contracts.Notice {
+	if len(e.Missing) == 0 {
+		return contracts.Notice{Code: contracts.CodeUnexpected, Args: []contracts.Arg{contracts.Text("Detail", e.Error())}}
+	}
+	return contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", strings.Join(e.Missing, ", "))}}
 }
 
 // CAFileError reports a CA file that holds no usable certificate.
@@ -100,6 +115,11 @@ type CAFileError struct {
 
 func (e *CAFileError) Error() string {
 	return fmt.Sprintf("transport: CA %q held no usable certificate", e.File)
+}
+
+// Notice returns the notice that the CA file at File holds no usable certificate.
+func (e *CAFileError) Notice() contracts.Notice {
+	return contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", EnvTLSCA), contracts.Text("Value", e.File)}}
 }
 
 type remoteError struct {
