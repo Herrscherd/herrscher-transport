@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 	"google.golang.org/grpc"
@@ -21,6 +22,7 @@ const (
 	approvalAnswerMethod                  = "answer"
 	maxApprovalBytes                      = 64 << 10
 	maxInflightApprovals                  = 8
+	approvalWorkerGrace                   = 500 * time.Millisecond
 )
 
 var errStreamClosed = errors.New("transport: approval stream closed")
@@ -65,8 +67,8 @@ func (s *backendServer) respondWithApprovals(req *pb.MethodEnvelope, stream grpc
 	defer sink.close()
 	defer cancel()
 
-	desk := newApprovalDesk(sink)
-	go desk.readAnswers(stream, cancel)
+	desk := newApprovalDesk(sink, cancel)
+	go desk.readAnswers(stream)
 
 	reply, respErr := s.real.Respond(contracts.WithApprovalAsker(turn, desk.ask), prompt, func(event contracts.BackendEvent) {
 		if err := sink.send(backendFrame{Event: &event}); err != nil {
@@ -76,7 +78,7 @@ func (s *backendServer) respondWithApprovals(req *pb.MethodEnvelope, stream grpc
 	failure := desk.failure()
 	cancel()
 
-	sendErr := sink.send(backendFrame{Done: true, Reply: reply, Error: errString(respErr)})
+	sendErr := sink.send(backendFrame{Done: true, Reply: reply, Error: errString(errors.Join(respErr, failure))})
 	if err := errors.Join(sendErr, failure); err != nil {
 		return fmt.Errorf("transport: backend approval turn: %w", err)
 	}
@@ -91,6 +93,14 @@ type frameSink struct {
 }
 
 func (s *frameSink) send(frame backendFrame) error {
+	payload, err := Marshal(frame)
+	if err != nil {
+		return err
+	}
+	return s.sendPayload(payload)
+}
+
+func (s *frameSink) sendPayload(payload []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
@@ -99,14 +109,11 @@ func (s *frameSink) send(frame backendFrame) error {
 	if s.closed {
 		return errStreamClosed
 	}
-	payload, err := Marshal(frame)
-	if err == nil {
-		err = s.stream.SendMsg(&pb.ResultEnvelope{JsonPayload: payload})
-	}
-	if err != nil {
+	if err := s.stream.SendMsg(&pb.ResultEnvelope{JsonPayload: payload}); err != nil {
 		s.err = err
+		return err
 	}
-	return err
+	return nil
 }
 
 func (s *frameSink) close() {
@@ -117,44 +124,57 @@ func (s *frameSink) close() {
 
 type approvalDesk struct {
 	sink    *frameSink
+	cancel  context.CancelFunc
 	mu      sync.Mutex
 	pending map[string]chan contracts.ApprovalAnswer
 	failed  error
 }
 
-func newApprovalDesk(sink *frameSink) *approvalDesk {
-	return &approvalDesk{sink: sink, pending: make(map[string]chan contracts.ApprovalAnswer)}
+func newApprovalDesk(sink *frameSink, cancel context.CancelFunc) *approvalDesk {
+	return &approvalDesk{sink: sink, cancel: cancel, pending: make(map[string]chan contracts.ApprovalAnswer)}
 }
 
 func (d *approvalDesk) ask(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
-	denied := contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionDeny}
-	if req.ID == "" || checkApprovalBound(req) != nil {
-		return denied
+	if req.ID == "" {
+		d.abort(ErrInvalidApproval)
+		return deniedAnswer(req.ID)
+	}
+	payload, err := marshalWithin(backendFrame{Approval: &req})
+	if err != nil {
+		d.abort(err)
+		return deniedAnswer(req.ID)
 	}
 	waiter, err := d.open(req.ID)
 	if err != nil {
-		return denied
+		d.abort(err)
+		return deniedAnswer(req.ID)
 	}
 	defer d.forget(req.ID, waiter)
-	if err := d.sink.send(backendFrame{Approval: &req}); err != nil {
-		return denied
+	if err := d.sink.sendPayload(payload); err != nil {
+		d.abort(err)
+		return deniedAnswer(req.ID)
 	}
 	select {
 	case answer := <-waiter:
 		return answer
 	case <-ctx.Done():
-		return denied
+		return deniedAnswer(req.ID)
 	}
+}
+
+func (d *approvalDesk) abort(err error) {
+	d.fail(err)
+	d.cancel()
 }
 
 func (d *approvalDesk) open(requestID string) (chan contracts.ApprovalAnswer, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if _, busy := d.pending[requestID]; busy {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidApproval, requestID)
+	}
 	if len(d.pending) >= maxInflightApprovals {
 		return nil, ErrTooManyApprovals
-	}
-	if _, busy := d.pending[requestID]; busy {
-		return nil, ErrInvalidApproval
 	}
 	waiter := make(chan contracts.ApprovalAnswer, 1)
 	d.pending[requestID] = waiter
@@ -169,8 +189,8 @@ func (d *approvalDesk) forget(requestID string, waiter chan contracts.ApprovalAn
 	}
 }
 
-func (d *approvalDesk) readAnswers(stream grpc.ServerStream, cancel context.CancelFunc) {
-	defer cancel()
+func (d *approvalDesk) readAnswers(stream grpc.ServerStream) {
+	defer d.cancel()
 	for {
 		msg := new(pb.MethodEnvelope)
 		if err := stream.RecvMsg(msg); err != nil {
@@ -178,7 +198,7 @@ func (d *approvalDesk) readAnswers(stream grpc.ServerStream, cancel context.Canc
 			return
 		}
 		if err := d.accept(msg); err != nil {
-			d.fail(err)
+			d.abort(err)
 			return
 		}
 	}
@@ -231,17 +251,19 @@ func (d *approvalDesk) failure() error {
 // approve tools. It behaves as Respond does, and in addition each approval request
 // the backend raises is answered by the ApprovalAsker the context carries (see
 // contracts.WithApprovalAsker). A context without an asker answers every request
-// with a denial. It returns ErrApprovalStreamUnsupported, and runs no turn, when the
-// remote server predates the approval stream.
+// with a denial. An asker must return once its context is cancelled: the turn waits
+// at most a short grace period for it, then returns ErrApprovalWorkerBlocked. It
+// returns ErrApprovalStreamUnsupported, and runs no turn, when the remote server
+// predates the approval stream.
 func (p *BackendProxy) RespondWithApprovals(ctx context.Context, prompt contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	payload, err := encodeArgs(prompt)
 	if err != nil {
 		return "", err
 	}
 	turnCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	asker, _ := contracts.ApprovalAskerFrom(turnCtx)
-	turn := &approvalTurn{cancel: cancel, asker: asker}
-	defer turn.close()
+	turn := newApprovalTurn(cancel, asker)
 
 	stream, err := openApprovalStream(turnCtx, p.cc, payload)
 	if err != nil {
@@ -254,10 +276,13 @@ func (p *BackendProxy) RespondWithApprovals(ctx context.Context, prompt contract
 	for {
 		frame := new(pb.ResultEnvelope)
 		if err := stream.RecvMsg(frame); err != nil {
-			return "", turn.settle(approvalReceiveFailure(err))
+			return "", turn.end(approvalReceiveFailure(err))
+		}
+		if len(frame.JsonPayload) > maxApprovalBytes {
+			return "", turn.end(ErrApprovalTooLarge)
 		}
 		if outcome := applyTurnFrame(frame, onEvent, onRequest); outcome.terminal {
-			return outcome.reply, turn.settle(outcome.err)
+			return outcome.reply, turn.end(outcome.err)
 		}
 	}
 }
@@ -291,54 +316,61 @@ func approvalReceiveFailure(err error) error {
 }
 
 type approvalTurn struct {
-	cancel  context.CancelFunc
-	stream  grpc.ClientStream
-	asker   contracts.ApprovalAsker
-	sendMu  sync.Mutex
-	workers sync.WaitGroup
-	mu      sync.Mutex
-	pending int
-	settled bool
-	failed  error
+	cancel   context.CancelFunc
+	stream   grpc.ClientStream
+	asker    contracts.ApprovalAsker
+	sendMu   sync.Mutex
+	workers  sync.WaitGroup
+	mu       sync.Mutex
+	inflight map[string]struct{}
+	settled  bool
+	failed   error
+}
+
+func newApprovalTurn(cancel context.CancelFunc, asker contracts.ApprovalAsker) *approvalTurn {
+	return &approvalTurn{cancel: cancel, asker: asker, inflight: make(map[string]struct{})}
 }
 
 func (t *approvalTurn) onRequest(ctx context.Context, req contracts.ApprovalRequest) error {
 	if req.ID == "" {
 		return ErrInvalidApproval
 	}
-	if err := checkApprovalBound(req); err != nil {
+	if err := t.begin(req.ID); err != nil {
 		return err
-	}
-	if !t.begin() {
-		return ErrTooManyApprovals
 	}
 	t.workers.Add(1)
 	go func() {
 		defer t.workers.Done()
-		defer t.finish()
+		defer t.finish(req.ID)
 		t.reply(ctx, req)
 	}()
 	return nil
 }
 
-func (t *approvalTurn) begin() bool {
+func (t *approvalTurn) begin(requestID string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.pending >= maxInflightApprovals {
-		return false
+	if _, busy := t.inflight[requestID]; busy {
+		return fmt.Errorf("%w: %q", ErrInvalidApproval, requestID)
 	}
-	t.pending++
-	return true
+	if len(t.inflight) >= maxInflightApprovals {
+		return ErrTooManyApprovals
+	}
+	t.inflight[requestID] = struct{}{}
+	return nil
 }
 
-func (t *approvalTurn) finish() {
+func (t *approvalTurn) finish(requestID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.pending--
+	delete(t.inflight, requestID)
 }
 
 func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest) {
-	payload, err := Marshal(t.decide(ctx, req))
+	payload, err := marshalWithin(t.decide(ctx, req))
+	if errors.Is(err, ErrApprovalTooLarge) {
+		payload, err = Marshal(deniedAnswer(req.ID))
+	}
 	if err != nil {
 		t.fail(fmt.Errorf("backend: encode approval answer: %w", err))
 		return
@@ -352,13 +384,12 @@ func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest)
 }
 
 func (t *approvalTurn) decide(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
-	denied := contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionDeny}
 	if t.asker == nil {
-		return denied
+		return deniedAnswer(req.ID)
 	}
 	answer := t.asker(ctx, req)
-	if answer.ID != req.ID || checkApprovalBound(answer) != nil {
-		return denied
+	if ctx.Err() != nil || answer.ID != req.ID {
+		return deniedAnswer(req.ID)
 	}
 	if !answer.Allowed() {
 		answer.Decision = contracts.DecisionDeny
@@ -376,25 +407,42 @@ func (t *approvalTurn) fail(err error) {
 	t.cancel()
 }
 
-func (t *approvalTurn) settle(err error) error {
+func (t *approvalTurn) end(err error) error {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.settled = true
-	return errors.Join(err, t.failed)
-}
-
-func (t *approvalTurn) close() {
+	failed := t.failed
+	t.mu.Unlock()
 	t.cancel()
-	t.workers.Wait()
+	return errors.Join(err, failed, t.drain())
 }
 
-func checkApprovalBound(value any) error {
+func (t *approvalTurn) drain() error {
+	drained := make(chan struct{})
+	go func() {
+		t.workers.Wait()
+		close(drained)
+	}()
+	grace := time.NewTimer(approvalWorkerGrace)
+	defer grace.Stop()
+	select {
+	case <-drained:
+		return nil
+	case <-grace.C:
+		return ErrApprovalWorkerBlocked
+	}
+}
+
+func deniedAnswer(requestID string) contracts.ApprovalAnswer {
+	return contracts.ApprovalAnswer{ID: requestID, Decision: contracts.DecisionDeny}
+}
+
+func marshalWithin(value any) ([]byte, error) {
 	payload, err := Marshal(value)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidApproval, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidApproval, err)
 	}
 	if len(payload) > maxApprovalBytes {
-		return ErrApprovalTooLarge
+		return nil, ErrApprovalTooLarge
 	}
-	return nil
+	return payload, nil
 }

@@ -83,6 +83,11 @@ func answering(decision contracts.ApprovalDecision, reason string) contracts.App
 	}
 }
 
+func untilCancelled(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
+	<-ctx.Done()
+	return contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionAllow}
+}
+
 func answerEnvelope(t *testing.T, answer contracts.ApprovalAnswer) *pb.MethodEnvelope {
 	t.Helper()
 	return &pb.MethodEnvelope{Port: PortBackend, Method: approvalAnswerMethod, JsonPayload: mustMarshal(t, answer)}
@@ -191,7 +196,7 @@ func TestApprovalBrokenStreamIsDenied(t *testing.T) {
 }
 
 func TestApprovalAnswerWithUnknownIDIsRejected(t *testing.T) {
-	desk := newApprovalDesk(nil)
+	desk := newApprovalDesk(nil, func() {})
 	waiter, err := desk.open("a1")
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -293,16 +298,21 @@ func (s rawBackendServer) respondWithApprovals(_ *pb.MethodEnvelope, stream grpc
 	return nil
 }
 
+func serveRawFrames(t *testing.T, frames ...backendFrame) *BackendProxy {
+	t.Helper()
+	return serveApproval(t, func(s *grpc.Server) {
+		desc := backendStreamServiceDesc()
+		s.RegisterService(&desc, rawBackendServer{frames: frames})
+	})
+}
+
 func TestApprovalRequestOverBoundIsRefused(t *testing.T) {
 	oversized := backendFrame{Approval: &contracts.ApprovalRequest{
 		ID:      "big",
 		Tool:    "Bash",
 		Subject: strings.Repeat("s", maxApprovalBytes),
 	}}
-	proxy := serveApproval(t, func(s *grpc.Server) {
-		desc := backendStreamServiceDesc()
-		s.RegisterService(&desc, rawBackendServer{frames: []backendFrame{oversized}})
-	})
+	proxy := serveRawFrames(t, oversized)
 
 	ctx := contracts.WithApprovalAsker(context.Background(), answering(contracts.DecisionAllow, ""))
 	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrApprovalTooLarge) {
@@ -310,23 +320,122 @@ func TestApprovalRequestOverBoundIsRefused(t *testing.T) {
 	}
 }
 
+func TestApprovalFrameOverBoundIsRefusedBeforeDecoding(t *testing.T) {
+	oversized := backendFrame{Event: &contracts.BackendEvent{Kind: "text", Detail: strings.Repeat("e", maxApprovalBytes)}}
+	proxy := serveRawFrames(t, oversized, backendFrame{Done: true, Reply: "done"})
+
+	if _, err := proxy.RespondWithApprovals(context.Background(), contracts.Prompt{}, nil); !errors.Is(err, ErrApprovalTooLarge) {
+		t.Fatalf("an oversized frame must be refused with ErrApprovalTooLarge, got %v", err)
+	}
+}
+
 func TestApprovalAnswerOverBoundIsRefusedByServer(t *testing.T) {
-	desk := newApprovalDesk(nil)
+	desk := newApprovalDesk(nil, func() {})
 	envelope := &pb.MethodEnvelope{Port: PortBackend, Method: approvalAnswerMethod, JsonPayload: make([]byte, maxApprovalBytes+1)}
 	if err := desk.accept(envelope); !errors.Is(err, ErrApprovalTooLarge) {
 		t.Fatalf("an oversized answer must be refused with ErrApprovalTooLarge, got %v", err)
 	}
 }
 
-func TestApprovalDeskBoundsRequestsInFlight(t *testing.T) {
-	desk := newApprovalDesk(nil)
+func TestApprovalDeskAbortsBeyondInflightBound(t *testing.T) {
+	cancelled := false
+	desk := newApprovalDesk(nil, func() { cancelled = true })
 	for index := range maxInflightApprovals {
 		if _, err := desk.open(fmt.Sprintf("r%d", index)); err != nil {
 			t.Fatalf("request %d within the bound was refused: %v", index, err)
 		}
 	}
-	if _, err := desk.open("one-too-many"); !errors.Is(err, ErrTooManyApprovals) {
-		t.Fatalf("request beyond the bound must be refused with ErrTooManyApprovals, got %v", err)
+	answer := desk.ask(context.Background(), contracts.ApprovalRequest{ID: "one-too-many", Tool: "Bash", Subject: "ls"})
+	if answer.Allowed() {
+		t.Fatalf("a request beyond the bound must be denied, got %+v", answer)
+	}
+	if !errors.Is(desk.failure(), ErrTooManyApprovals) {
+		t.Fatalf("the desk must record ErrTooManyApprovals, got %v", desk.failure())
+	}
+	if !cancelled {
+		t.Fatal("a request beyond the bound must end the turn")
+	}
+}
+
+func TestApprovalDecideDeniesAnswerWithOtherID(t *testing.T) {
+	asker := func(_ context.Context, _ contracts.ApprovalRequest) contracts.ApprovalAnswer {
+		return contracts.ApprovalAnswer{ID: "other", Decision: contracts.DecisionAllow}
+	}
+	turn := newApprovalTurn(func() {}, asker)
+	answer := turn.decide(context.Background(), contracts.ApprovalRequest{ID: "r1", Tool: "Bash", Subject: "ls"})
+	if answer.Allowed() || answer.ID != "r1" {
+		t.Fatalf("an answer carrying another ID must be denied under the request's ID, got %+v", answer)
+	}
+}
+
+func TestApprovalDecideDeniesWhenAskerCancelsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	asker := func(_ context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
+		cancel()
+		return contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionAllow}
+	}
+	turn := newApprovalTurn(cancel, asker)
+	answer := turn.decide(ctx, contracts.ApprovalRequest{ID: "r2", Tool: "Bash", Subject: "rm"})
+	if answer.Allowed() {
+		t.Fatalf("an answer given after the turn was cancelled must be denied, got %+v", answer)
+	}
+}
+
+func TestApprovalDuplicateRequestIsRejectedByClient(t *testing.T) {
+	proxy := serveRawFrames(t,
+		backendFrame{Approval: &contracts.ApprovalRequest{ID: "dup", Tool: "Bash", Subject: "ls"}},
+		backendFrame{Approval: &contracts.ApprovalRequest{ID: "dup", Tool: "Bash", Subject: "ls"}},
+	)
+
+	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
+	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrInvalidApproval) {
+		t.Fatalf("a request repeating an ID in flight must end the turn with ErrInvalidApproval, got %v", err)
+	}
+}
+
+func TestApprovalClientInflightBoundIsExplicit(t *testing.T) {
+	frames := make([]backendFrame, 0, maxInflightApprovals+1)
+	for index := range maxInflightApprovals + 1 {
+		frames = append(frames, backendFrame{Approval: &contracts.ApprovalRequest{ID: fmt.Sprintf("r%d", index), Tool: "Edit", Subject: "x"}})
+	}
+	proxy := serveRawFrames(t, frames...)
+
+	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
+	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrTooManyApprovals) {
+		t.Fatalf("a request beyond the in-flight bound must end the turn with ErrTooManyApprovals, got %v", err)
+	}
+}
+
+func TestApprovalDuplicateRequestAbortsServerTurn(t *testing.T) {
+	backend := newAskingBackend(
+		contracts.ApprovalRequest{ID: "s1", Tool: "Bash", Subject: "ls"},
+		contracts.ApprovalRequest{ID: "s1", Tool: "Bash", Subject: "ls"},
+	)
+	proxy := serveAsking(t, backend)
+
+	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
+	_, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil)
+	if err == nil || !strings.Contains(err.Error(), ErrInvalidApproval.Error()) {
+		t.Fatalf("a server that repeats an ID in flight must end the turn with ErrInvalidApproval, got %v", err)
+	}
+}
+
+func TestApprovalBlockedAskerIsBounded(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	proxy := serveRawFrames(t,
+		backendFrame{Approval: &contracts.ApprovalRequest{ID: "stuck", Tool: "Bash", Subject: "ls"}},
+		backendFrame{Done: true, Reply: "done"},
+	)
+	asker := func(_ context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
+		<-release
+		return contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionAllow}
+	}
+
+	_, err := proxy.RespondWithApprovals(contracts.WithApprovalAsker(context.Background(), asker), contracts.Prompt{}, nil)
+	if !errors.Is(err, ErrApprovalWorkerBlocked) {
+		t.Fatalf("an asker that ignores its cancelled context must end the turn with ErrApprovalWorkerBlocked, got %v", err)
 	}
 }
 

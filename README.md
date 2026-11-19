@@ -76,10 +76,15 @@ stream, and each answer goes back up the same stream, correlated by request ID.
   asker answers every request with a denial, and the turn still runs to its end.
 - Fail closed: any decision other than allow becomes a deny. An answer whose ID
   matches no pending request, or matches a request already answered, is rejected.
-- Bounds: a request or an answer is at most 64 KiB of JSON, and at most 8
-  requests are in flight per stream. A larger message returns
-  `ErrApprovalTooLarge`; a request beyond the eight in flight ends the turn with
-  `ErrTooManyApprovals`.
+  An answer that does not carry the ID of its request is denied under that ID.
+- Bounds: every approval frame, in either direction, is at most 64 KiB of JSON.
+  The client checks the raw frame before it decodes it, so an oversized event
+  or request ends the turn with `ErrApprovalTooLarge`. At most 8 requests are in
+  flight per stream. A request beyond the eight, or one repeating the ID of a
+  request still in flight, ends the turn on both sides: the client returns
+  `ErrTooManyApprovals` or `ErrInvalidApproval`, and the server denies the
+  pending request and reports the same reason in the final frame, as text, so
+  the client matches it by message rather than with `errors.Is`.
 - Old servers: a server that predates the stream answers `Unimplemented`, and
   `RespondWithApprovals` returns `ErrApprovalStreamUnsupported`, which callers
   match with `errors.Is`. It never falls back to `Respond` in silence: the caller
@@ -89,6 +94,13 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Lifetime: the client never calls `CloseSend`. The turn ends when its context is
   cancelled at return, which closes the stream and releases every relay
   goroutine.
+- Asker: an asker must return once its context is cancelled. The turn waits at
+  most 500 ms for the asker after the turn ends, then returns
+  `ErrApprovalWorkerBlocked`. The asker goroutine it leaves behind is the
+  caller's to end.
+- Outbox: `Prompt.Outbox` names files on the daemon's host. The caller must
+  empty it before sending a prompt to a remote backend, because the entries
+  reach the remote as they are.
 
 ## Discovery and trust
 

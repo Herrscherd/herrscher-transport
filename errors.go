@@ -26,6 +26,9 @@ var ErrUnknownApproval = errors.New("transport: approval answer matches no pendi
 // ErrTooManyApprovals is returned when a stream holds more approval requests in flight than it allows.
 var ErrTooManyApprovals = errors.New("transport: too many approval requests in flight")
 
+// ErrApprovalWorkerBlocked is returned by RespondWithApprovals when an asker has not returned within the grace period after its turn's context was cancelled.
+var ErrApprovalWorkerBlocked = errors.New("transport: approval asker did not return after its context was cancelled")
+
 // ErrTLSNotConfigured is returned when TLS is required but no TLS configuration is set.
 var ErrTLSNotConfigured = errors.New("transport: TLS not configured")
 
