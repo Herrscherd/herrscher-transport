@@ -11,7 +11,8 @@ Status: live.
 
 Ports carried: `contracts.Memory` and `contracts.Orchestrator`, unary via
 `Plugin.Call`; and `contracts.Backend`, server-streaming via
-`BackendStream.Respond`.
+`BackendStream.Respond`, or bidirectional via
+`BackendStream.RespondWithApprovals` when the turn needs tool approvals.
 
 ## Install
 
@@ -57,6 +58,37 @@ tuple ride inside `MethodEnvelope`.
 
 `ResultEnvelope.error` is an in-band domain error. A peer being down surfaces as
 the gRPC error instead.
+
+## Remote approval stream
+
+`BackendStream.RespondWithApprovals` runs one turn exactly as `Respond` does, and
+adds a bidirectional stream on which the remote backend asks the daemon to
+approve tools. The prompt and the approval requests travel down the turn's
+stream, and each answer goes back up the same stream, correlated by request ID.
+`Respond` is unchanged.
+
+- Server: the turn's asker (`contracts.WithApprovalAsker`) sends one approval
+  frame per request and waits for the answer with that ID. It denies when the
+  turn's context is cancelled, when the stream breaks, or when the answer is
+  invalid.
+- Client: each request is relayed to the `contracts.ApprovalAsker` that the
+  caller's context carries (`contracts.ApprovalAskerFrom`). A context without an
+  asker answers every request with a denial, and the turn still runs to its end.
+- Fail closed: any decision other than allow becomes a deny. An answer whose ID
+  matches no pending request, or matches a request already answered, is rejected.
+- Bounds: a request or an answer is at most 64 KiB of JSON, and at most 8
+  requests are in flight per stream. A larger message returns
+  `ErrApprovalTooLarge`; a request beyond the eight in flight ends the turn with
+  `ErrTooManyApprovals`.
+- Old servers: a server that predates the stream answers `Unimplemented`, and
+  `RespondWithApprovals` returns `ErrApprovalStreamUnsupported`, which callers
+  match with `errors.Is`. It never falls back to `Respond` in silence: the caller
+  decides what to do with the session.
+- No token travels: the session token never leaves the daemon. The stream
+  carries only the prompt, the approval requests and their answers.
+- Lifetime: the client never calls `CloseSend`. The turn ends when its context is
+  cancelled at return, which closes the stream and releases every relay
+  goroutine.
 
 ## Discovery and trust
 
