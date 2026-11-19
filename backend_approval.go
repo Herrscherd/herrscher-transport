@@ -252,13 +252,14 @@ func (d *approvalDesk) failure() error {
 // approve tools. Its events and its reply are those of Respond. Each approval request
 // the backend raises is answered by the ApprovalAsker the context carries (see
 // contracts.WithApprovalAsker), and a context without an asker denies every request.
-// The 64 KiB bound applies to approval frames only. The client decodes the whole frame
-// first and checks its size before the asker sees it, so the bound does not limit
-// decoding: gRPC's 4 MiB default receive limit does. An asker must return once its
-// context is cancelled: every turn waits at most 500 ms for its askers at its end, a
-// turn that ends with an error then reports ErrApprovalWorkerBlocked, and a turn that
-// ends with a successful final frame never reports it. It returns ErrApprovalStreamUnsupported, and runs no turn,
-// when the remote server predates the approval stream.
+// The 64 KiB bound applies to approval frames only. The client decodes the whole
+// frame first and checks its size before the asker sees it, so the bound does not
+// limit decoding: gRPC's 4 MiB default receive limit does. An asker must return once
+// its context is cancelled: every turn waits at most 500 ms for its askers at its
+// end, a turn that ends with an error then reports ErrApprovalWorkerBlocked, and a
+// turn that ends with a successful final frame never reports it. It returns
+// ErrApprovalStreamUnsupported, and runs no turn, when the remote server predates the
+// approval stream.
 func (p *BackendProxy) RespondWithApprovals(ctx context.Context, prompt contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	payload, err := encodeArgs(prompt)
 	if err != nil {
