@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,10 +24,12 @@ const backendRespondFullMethod = "/herrscher.transport.v1.BackendStream/Respond"
 const respondMethod = "Respond"
 
 type backendFrame struct {
-	Event *contracts.BackendEvent `json:"event,omitempty"`
-	Done  bool                    `json:"done,omitempty"`
-	Reply string                  `json:"reply,omitempty"`
-	Error string                  `json:"error,omitempty"`
+	Event    *contracts.BackendEvent    `json:"event,omitempty"`
+	Done     bool                       `json:"done,omitempty"`
+	Reply    string                     `json:"reply,omitempty"`
+	Error    string                     `json:"error,omitempty"`
+	Approval *contracts.ApprovalRequest `json:"approval,omitempty"`
+	Wire     json.RawMessage            `json:"wire,omitempty"`
 }
 
 func errString(err error) string {
@@ -36,32 +39,46 @@ func errString(err error) string {
 	return ""
 }
 
+const backendServiceName = "herrscher.transport.v1.BackendStream"
+
 type backendStreamSrv interface {
 	respond(req *pb.MethodEnvelope, stream grpc.ServerStream) error
 }
 
-func backendRespondHandler(srv any, stream grpc.ServerStream) error {
+func receiveThen(stream grpc.ServerStream, serve func(req *pb.MethodEnvelope) error) error {
 	req := new(pb.MethodEnvelope)
 	if err := stream.RecvMsg(req); err != nil {
 		return err
 	}
-	handler, ok := srv.(backendStreamSrv)
-	if !ok {
-		return errBackendStreamNotResponder
-	}
-	return handler.respond(req, stream)
+	return serve(req)
+}
+
+func backendRespondHandler(srv any, stream grpc.ServerStream) error {
+	return receiveThen(stream, func(req *pb.MethodEnvelope) error {
+		handler, ok := srv.(backendStreamSrv)
+		if !ok {
+			return errBackendStreamNotResponder
+		}
+		return handler.respond(req, stream)
+	})
 }
 
 var errBackendStreamNotResponder = errors.New("backend stream: server does not respond")
 
+func backendRespondStream() grpc.StreamDesc {
+	return grpc.StreamDesc{StreamName: respondMethod, Handler: backendRespondHandler, ServerStreams: true}
+}
+
 func backendStreamServiceDesc() grpc.ServiceDesc {
+	return backendServiceDescFor(backendRespondStream(), backendRespondWithApprovalsStream())
+}
+
+func backendServiceDescFor(streams ...grpc.StreamDesc) grpc.ServiceDesc {
 	return grpc.ServiceDesc{
-		ServiceName: "herrscher.transport.v1.BackendStream",
+		ServiceName: backendServiceName,
 		HandlerType: (*backendStreamSrv)(nil),
-		Streams: []grpc.StreamDesc{
-			{StreamName: respondMethod, Handler: backendRespondHandler, ServerStreams: true},
-		},
-		Metadata: "backend_stream.go",
+		Streams:     streams,
+		Metadata:    "backend_stream.go",
 	}
 }
 
@@ -194,9 +211,25 @@ type frameOutcome struct {
 }
 
 func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEvent)) frameOutcome {
+	return applyTurnFrame(frame, onEvent, nil)
+}
+
+func applyTurnFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEvent), onRequest func(contracts.ApprovalRequest) error) frameOutcome {
 	var decoded backendFrame
 	if err := Unmarshal(frame.JsonPayload, &decoded); err != nil {
 		return frameOutcome{terminal: true, err: fmt.Errorf("backend: decode frame: %w", err)}
+	}
+	if decoded.Approval != nil {
+		if onRequest == nil {
+			return frameOutcome{terminal: true, err: ErrInvalidFrame}
+		}
+		if len(frame.JsonPayload) > maxApprovalBytes {
+			return frameOutcome{terminal: true, err: ErrApprovalTooLarge}
+		}
+		if err := onRequest(*decoded.Approval); err != nil {
+			return frameOutcome{terminal: true, err: err}
+		}
+		return frameOutcome{}
 	}
 	if decoded.Event != nil {
 		if onEvent != nil {
@@ -208,7 +241,7 @@ func applyBackendFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendE
 		return frameOutcome{terminal: true, err: ErrInvalidFrame}
 	}
 	if decoded.Error != "" {
-		return frameOutcome{reply: decoded.Reply, terminal: true, err: &remoteError{message: decoded.Error}}
+		return frameOutcome{reply: decoded.Reply, terminal: true, err: decodeWireError(decoded.Wire, decoded.Error)}
 	}
 	return frameOutcome{reply: decoded.Reply, terminal: true}
 }
