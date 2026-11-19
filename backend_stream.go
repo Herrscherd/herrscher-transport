@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ type backendFrame struct {
 	Reply    string                     `json:"reply,omitempty"`
 	Error    string                     `json:"error,omitempty"`
 	Approval *contracts.ApprovalRequest `json:"approval,omitempty"`
+	Wire     json.RawMessage            `json:"wire,omitempty"`
 }
 
 func errString(err error) string {
@@ -221,6 +223,9 @@ func applyTurnFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEven
 		if onRequest == nil {
 			return frameOutcome{terminal: true, err: ErrInvalidFrame}
 		}
+		if len(frame.JsonPayload) > maxApprovalBytes {
+			return frameOutcome{terminal: true, err: ErrApprovalTooLarge}
+		}
 		if err := onRequest(*decoded.Approval); err != nil {
 			return frameOutcome{terminal: true, err: err}
 		}
@@ -236,7 +241,7 @@ func applyTurnFrame(frame *pb.ResultEnvelope, onEvent func(contracts.BackendEven
 		return frameOutcome{terminal: true, err: ErrInvalidFrame}
 	}
 	if decoded.Error != "" {
-		return frameOutcome{reply: decoded.Reply, terminal: true, err: &remoteError{message: decoded.Error}}
+		return frameOutcome{reply: decoded.Reply, terminal: true, err: decodeWireError(decoded.Wire, decoded.Error)}
 	}
 	return frameOutcome{reply: decoded.Reply, terminal: true}
 }

@@ -320,12 +320,27 @@ func TestApprovalRequestOverBoundIsRefused(t *testing.T) {
 	}
 }
 
-func TestApprovalFrameOverBoundIsRefusedBeforeDecoding(t *testing.T) {
-	oversized := backendFrame{Event: &contracts.BackendEvent{Kind: "text", Detail: strings.Repeat("e", maxApprovalBytes)}}
-	proxy := serveRawFrames(t, oversized, backendFrame{Done: true, Reply: "done"})
+func TestApprovalLargeEventAndDoneAreNotBounded(t *testing.T) {
+	const size = maxApprovalBytes + 1<<10
+	bigDetail := strings.Repeat("e", size)
+	bigReply := strings.Repeat("r", size)
+	proxy := serveRawFrames(t,
+		backendFrame{Event: &contracts.BackendEvent{Kind: "text", Detail: bigDetail}},
+		backendFrame{Done: true, Reply: bigReply},
+	)
 
-	if _, err := proxy.RespondWithApprovals(context.Background(), contracts.Prompt{}, nil); !errors.Is(err, ErrApprovalTooLarge) {
-		t.Fatalf("an oversized frame must be refused with ErrApprovalTooLarge, got %v", err)
+	var events []contracts.BackendEvent
+	reply, err := proxy.RespondWithApprovals(context.Background(), contracts.Prompt{}, func(event contracts.BackendEvent) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatalf("an event and a final frame above 64 KiB must pass on RespondWithApprovals, got %v", err)
+	}
+	if len(events) != 1 || events[0].Detail != bigDetail {
+		t.Fatalf("the oversized event must reach the caller intact, got %d events", len(events))
+	}
+	if reply != bigReply {
+		t.Fatalf("the oversized final reply must reach the caller intact, got %d bytes", len(reply))
 	}
 }
 
@@ -415,9 +430,71 @@ func TestApprovalDuplicateRequestAbortsServerTurn(t *testing.T) {
 	proxy := serveAsking(t, backend)
 
 	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
-	_, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil)
-	if err == nil || !strings.Contains(err.Error(), ErrInvalidApproval.Error()) {
+	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrInvalidApproval) {
 		t.Fatalf("a server that repeats an ID in flight must end the turn with ErrInvalidApproval, got %v", err)
+	}
+}
+
+func TestApprovalServerInflightBoundIsExplicit(t *testing.T) {
+	requests := make([]contracts.ApprovalRequest, 0, maxInflightApprovals+1)
+	for index := range maxInflightApprovals + 1 {
+		requests = append(requests, contracts.ApprovalRequest{ID: fmt.Sprintf("s%d", index), Tool: "Edit", Subject: "x"})
+	}
+	proxy := serveAsking(t, newAskingBackend(requests...))
+
+	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
+	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrTooManyApprovals) {
+		t.Fatalf("a server with more than eight requests in flight must end the turn with ErrTooManyApprovals, got %v", err)
+	}
+}
+
+func TestApprovalOversizedRequestFromServerIsExplicit(t *testing.T) {
+	backend := newAskingBackend(contracts.ApprovalRequest{ID: "huge", Tool: "Bash", Subject: strings.Repeat("h", maxApprovalBytes)})
+	proxy := serveAsking(t, backend)
+
+	ctx := contracts.WithApprovalAsker(context.Background(), untilCancelled)
+	if _, err := proxy.RespondWithApprovals(ctx, contracts.Prompt{}, nil); !errors.Is(err, ErrApprovalTooLarge) {
+		t.Fatalf("a server that cannot send a request within the bound must end the turn with ErrApprovalTooLarge, got %v", err)
+	}
+}
+
+func TestApprovalAllowAfterCancellationReachesBackendAsDeny(t *testing.T) {
+	backend := newAskingBackend(contracts.ApprovalRequest{ID: "late", Tool: "Bash", Subject: "rm"})
+	proxy := serveAsking(t, backend)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	asker := func(_ context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
+		cancel()
+		return contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionAllow}
+	}
+
+	if _, err := proxy.RespondWithApprovals(contracts.WithApprovalAsker(ctx, asker), contracts.Prompt{}, nil); err == nil {
+		t.Fatal("a turn cancelled by its caller must return an error")
+	}
+	got := receiveResult(t, backend.out)
+	if got.Answer.ID != "late" || got.Answer.Allowed() {
+		t.Fatalf("an allow given after cancellation must reach the backend as a deny, got %+v", got.Answer)
+	}
+}
+
+func TestApprovalCleanDoneIgnoresBlockedAsker(t *testing.T) {
+	proxy := serveRawFrames(t,
+		backendFrame{Approval: &contracts.ApprovalRequest{ID: "slow", Tool: "Bash", Subject: "ls"}},
+		backendFrame{Done: true, Reply: "done"},
+	)
+	asker := func(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
+		<-ctx.Done()
+		time.Sleep(approvalWorkerGrace + 100*time.Millisecond)
+		return contracts.ApprovalAnswer{ID: req.ID, Decision: contracts.DecisionAllow}
+	}
+
+	reply, err := proxy.RespondWithApprovals(contracts.WithApprovalAsker(context.Background(), asker), contracts.Prompt{}, nil)
+	if err != nil {
+		t.Fatalf("a turn that received a successful final frame must not report a blocked asker, got %v", err)
+	}
+	if reply != "done" {
+		t.Fatalf("reply = %q, want %q", reply, "done")
 	}
 }
 
@@ -426,7 +503,7 @@ func TestApprovalBlockedAskerIsBounded(t *testing.T) {
 	t.Cleanup(func() { close(release) })
 	proxy := serveRawFrames(t,
 		backendFrame{Approval: &contracts.ApprovalRequest{ID: "stuck", Tool: "Bash", Subject: "ls"}},
-		backendFrame{Done: true, Reply: "done"},
+		backendFrame{Done: true, Error: "backend failed"},
 	)
 	asker := func(_ context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
 		<-release

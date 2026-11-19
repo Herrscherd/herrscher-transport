@@ -78,7 +78,8 @@ func (s *backendServer) respondWithApprovals(req *pb.MethodEnvelope, stream grpc
 	failure := desk.failure()
 	cancel()
 
-	sendErr := sink.send(backendFrame{Done: true, Reply: reply, Error: errString(errors.Join(respErr, failure))})
+	turnErr := errors.Join(respErr, failure)
+	sendErr := sink.send(backendFrame{Done: true, Reply: reply, Error: errString(turnErr), Wire: encodeWireError(turnErr)})
 	if err := errors.Join(sendErr, failure); err != nil {
 		return fmt.Errorf("transport: backend approval turn: %w", err)
 	}
@@ -248,13 +249,15 @@ func (d *approvalDesk) failure() error {
 }
 
 // RespondWithApprovals runs one turn on a remote backend that may ask the daemon to
-// approve tools. It behaves as Respond does, and in addition each approval request
+// approve tools. Its events and its reply are those of Respond. Each approval request
 // the backend raises is answered by the ApprovalAsker the context carries (see
-// contracts.WithApprovalAsker). A context without an asker answers every request
-// with a denial. An asker must return once its context is cancelled: the turn waits
-// at most a short grace period for it, then returns ErrApprovalWorkerBlocked. It
-// returns ErrApprovalStreamUnsupported, and runs no turn, when the remote server
-// predates the approval stream.
+// contracts.WithApprovalAsker), and a context without an asker denies every request.
+// The 64 KiB bound applies to approval frames only, and it limits what the client
+// decodes, not what gRPC receives first. An asker must return once its context is
+// cancelled: a turn that ends with an error waits at most 500 ms for its askers, then
+// reports ErrApprovalWorkerBlocked, while a turn that ends with a successful final
+// frame never reports it. It returns ErrApprovalStreamUnsupported, and runs no turn,
+// when the remote server predates the approval stream.
 func (p *BackendProxy) RespondWithApprovals(ctx context.Context, prompt contracts.Prompt, onEvent func(contracts.BackendEvent)) (string, error) {
 	payload, err := encodeArgs(prompt)
 	if err != nil {
@@ -277,9 +280,6 @@ func (p *BackendProxy) RespondWithApprovals(ctx context.Context, prompt contract
 		frame := new(pb.ResultEnvelope)
 		if err := stream.RecvMsg(frame); err != nil {
 			return "", turn.end(approvalReceiveFailure(err))
-		}
-		if len(frame.JsonPayload) > maxApprovalBytes {
-			return "", turn.end(ErrApprovalTooLarge)
 		}
 		if outcome := applyTurnFrame(frame, onEvent, onRequest); outcome.terminal {
 			return outcome.reply, turn.end(outcome.err)
@@ -413,7 +413,11 @@ func (t *approvalTurn) end(err error) error {
 	failed := t.failed
 	t.mu.Unlock()
 	t.cancel()
-	return errors.Join(err, failed, t.drain())
+	blocked := t.drain()
+	if err == nil && failed == nil {
+		return nil
+	}
+	return errors.Join(err, failed, blocked)
 }
 
 func (t *approvalTurn) drain() error {

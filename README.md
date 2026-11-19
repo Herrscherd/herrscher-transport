@@ -77,14 +77,18 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Fail closed: any decision other than allow becomes a deny. An answer whose ID
   matches no pending request, or matches a request already answered, is rejected.
   An answer that does not carry the ID of its request is denied under that ID.
-- Bounds: every approval frame, in either direction, is at most 64 KiB of JSON.
-  The client checks the raw frame before it decodes it, so an oversized event
-  or request ends the turn with `ErrApprovalTooLarge`. At most 8 requests are in
-  flight per stream. A request beyond the eight, or one repeating the ID of a
-  request still in flight, ends the turn on both sides: the client returns
-  `ErrTooManyApprovals` or `ErrInvalidApproval`, and the server denies the
-  pending request and reports the same reason in the final frame, as text, so
-  the client matches it by message rather than with `errors.Is`.
+- Bounds: an approval frame (a request or an answer) is at most 64 KiB of JSON.
+  The bound limits what is decoded, not what gRPC receives first: gRPC still
+  reads a frame up to its 4 MiB default before the check runs. Events and the
+  final frame are not bounded, so a large event or reply passes as it does on
+  `Respond`. At most 8 requests are in flight per stream. A request beyond the
+  eight, or one repeating the ID of a request still in flight, ends the turn on
+  both sides with `ErrTooManyApprovals` or `ErrInvalidApproval`. The server
+  denies the pending request and reports the reason in the final frame with a
+  kind that the client decodes back into the same sentinel, so `errors.Is`
+  works on both sides. An approval frame over the bound ends the turn with
+  `ErrApprovalTooLarge`, and so does a server that cannot send a request within
+  it.
 - Old servers: a server that predates the stream answers `Unimplemented`, and
   `RespondWithApprovals` returns `ErrApprovalStreamUnsupported`, which callers
   match with `errors.Is`. It never falls back to `Respond` in silence: the caller
@@ -94,13 +98,18 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Lifetime: the client never calls `CloseSend`. The turn ends when its context is
   cancelled at return, which closes the stream and releases every relay
   goroutine.
-- Asker: an asker must return once its context is cancelled. The turn waits at
-  most 500 ms for the asker after the turn ends, then returns
-  `ErrApprovalWorkerBlocked`. The asker goroutine it leaves behind is the
-  caller's to end.
+- Asker: an asker must return once its context is cancelled. A turn that ends
+  with an error waits at most 500 ms for its askers, then returns
+  `ErrApprovalWorkerBlocked`, and the asker goroutine it leaves behind is the
+  caller's to end. A turn that ends with a successful final frame never reports
+  it.
 - Outbox: `Prompt.Outbox` names files on the daemon's host. The caller must
   empty it before sending a prompt to a remote backend, because the entries
   reach the remote as they are.
+- Events: they cross the stream as the backend sends them. Their kinds `reset`
+  (the backend started a new process, the output streamed so far is discarded,
+  and the same prompt runs again) and `notice` (a message for the human, in
+  `Notice`) reach the caller unchanged, as they do on `Respond`.
 
 ## Discovery and trust
 

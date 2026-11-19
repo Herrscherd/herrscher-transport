@@ -14,10 +14,10 @@ var ErrInvalidFrame = errors.New("transport: invalid frame (neither event nor do
 // ErrApprovalStreamUnsupported is returned by RespondWithApprovals when the remote backend does not serve the approval stream, as an older server does. The caller refuses the session: it never falls back to Respond in silence.
 var ErrApprovalStreamUnsupported = errors.New("transport: remote backend does not serve the approval stream")
 
-// ErrApprovalTooLarge is returned for an approval request or answer whose JSON exceeds the 64 KiB bound.
+// ErrApprovalTooLarge is returned for an approval request or answer whose JSON exceeds the 64 KiB bound. Events and the final frame of a turn are not bounded.
 var ErrApprovalTooLarge = errors.New("transport: approval message exceeds its size bound")
 
-// ErrInvalidApproval is returned for an approval message that is malformed, lacks its ID, or is sent on the wrong method.
+// ErrInvalidApproval is returned for an approval message that is malformed, lacks its ID, is sent on the wrong method, or repeats the ID of a request still in flight, on either side of the stream.
 var ErrInvalidApproval = errors.New("transport: invalid approval message")
 
 // ErrUnknownApproval is returned for an answer whose ID matches no pending request, including a second answer to a request already answered.
