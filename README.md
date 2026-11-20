@@ -80,10 +80,10 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Refusals: every refusal the transport makes is a denial whose
   `ApprovalAnswer.Refusal` carries a `contracts.ApprovalRefusal` code: `invalid`,
   `too_large`, `too_many`, `no_asker`, `cancelled`, `deadline`, `stream_closed`,
-  `send_failed` or `unclassified`. A refusal carries no `Reason`. `unclassified`
-  marks a cause the transport does not classify. If a code cannot be set, which
-  the transport's own constants never cause, the answer stays a bare deny with no
-  code, the error is surfaced, and the turn ends. A denial the asker chooses keeps
+  `send_failed` or `unclassified`. If a code cannot be set, which the transport's
+  own constants never cause, the answer stays a bare deny with no code, the error
+  is surfaced, and the turn ends. A refusal carries no `Reason`. `unclassified`
+  marks a cause the transport does not classify. A denial the asker chooses keeps
   the reason the asker gives, which may be empty, and an asker's answer that
   carries a `Refusal` is itself refused as `invalid`. The transport refuses an
   answer without a valid decision as `invalid`, whether the asker or the peer

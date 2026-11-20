@@ -275,10 +275,10 @@ func (d *approvalDesk) cause(ctx context.Context) error {
 // the backend raises is answered by the ApprovalAsker the context carries (see
 // contracts.WithApprovalAsker), and a context without an asker denies every request with
 // contracts.RefusalNoAsker. Each refusal the transport makes is a denial that names its cause
-// in ApprovalAnswer.Refusal and carries no Reason, except a denial the asker chooses, which
-// keeps the reason the asker gives, possibly empty. If a code cannot be set, which the
-// transport's own constants never cause, the answer stays a bare deny with no code, the error
-// is surfaced, and the turn ends.
+// in ApprovalAnswer.Refusal. If a code cannot be set, which the transport's own constants never
+// cause, the answer stays a bare deny with no code, the error is surfaced, and the turn ends.
+// A refusal carries no Reason, except a denial the asker chooses, which keeps the reason the
+// asker gives, possibly empty.
 // The 64 KiB bound applies to approval frames only. The client decodes the whole
 // frame first and checks its size before the asker sees it, so the bound does not
 // limit decoding: gRPC's 4 MiB default receive limit does. An asker must return once
