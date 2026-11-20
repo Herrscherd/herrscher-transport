@@ -138,28 +138,28 @@ func newApprovalDesk(sink *frameSink, cancel context.CancelFunc) *approvalDesk {
 func (d *approvalDesk) ask(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
 	if req.ID == "" {
 		d.abort(ErrInvalidApproval)
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, DenialInvalid)
 	}
 	payload, err := marshalWithin(backendFrame{Approval: &req})
 	if err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, denialFor(err))
 	}
 	waiter, err := d.open(req.ID)
 	if err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, denialFor(err))
 	}
 	defer d.forget(req.ID, waiter)
 	if err := d.sink.sendPayload(payload); err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, denialFor(err))
 	}
 	select {
 	case answer := <-waiter:
 		return answer
 	case <-ctx.Done():
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, denialFor(d.cause(ctx)))
 	}
 }
 
@@ -195,7 +195,7 @@ func (d *approvalDesk) readAnswers(stream grpc.ServerStream) {
 	for {
 		msg := new(pb.MethodEnvelope)
 		if err := stream.RecvMsg(msg); err != nil {
-			d.fail(fmt.Errorf("transport: approval answers ended: %w", err))
+			d.fail(fmt.Errorf("%w: %w", errStreamClosed, err))
 			return
 		}
 		if err := d.accept(msg); err != nil {
@@ -248,10 +248,18 @@ func (d *approvalDesk) failure() error {
 	return d.failed
 }
 
+func (d *approvalDesk) cause(ctx context.Context) error {
+	if err := d.failure(); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
 // RespondWithApprovals runs one turn on a remote backend that may ask the daemon to
 // approve tools. Its events and its reply are those of Respond. Each approval request
 // the backend raises is answered by the ApprovalAsker the context carries (see
-// contracts.WithApprovalAsker), and a context without an asker denies every request.
+// contracts.WithApprovalAsker), and a context without an asker denies every request with
+// DenialNoAsker. Each denial the transport makes names its DenialReason in ApprovalAnswer.Reason.
 // The 64 KiB bound applies to approval frames only. The client decodes the whole
 // frame first and checks its size before the asker sees it, so the bound does not
 // limit decoding: gRPC's 4 MiB default receive limit does. An asker must return once
@@ -371,7 +379,7 @@ func (t *approvalTurn) finish(requestID string) {
 func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest) {
 	payload, err := marshalWithin(t.decide(ctx, req))
 	if errors.Is(err, ErrApprovalTooLarge) {
-		payload, err = Marshal(deniedAnswer(req.ID))
+		payload, err = Marshal(deniedAnswer(req.ID, DenialTooLarge))
 	}
 	if err != nil {
 		t.fail(fmt.Errorf("backend: encode approval answer: %w", err))
@@ -387,11 +395,14 @@ func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest)
 
 func (t *approvalTurn) decide(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
 	if t.asker == nil {
-		return deniedAnswer(req.ID)
+		return deniedAnswer(req.ID, DenialNoAsker)
 	}
 	answer := t.asker(ctx, req)
-	if ctx.Err() != nil || answer.ID != req.ID {
-		return deniedAnswer(req.ID)
+	if err := ctx.Err(); err != nil {
+		return deniedAnswer(req.ID, denialFor(err))
+	}
+	if answer.ID != req.ID {
+		return deniedAnswer(req.ID, DenialInvalid)
 	}
 	if !answer.Allowed() {
 		answer.Decision = contracts.DecisionDeny
@@ -438,8 +449,8 @@ func (t *approvalTurn) drain() error {
 	}
 }
 
-func deniedAnswer(requestID string) contracts.ApprovalAnswer {
-	return contracts.ApprovalAnswer{ID: requestID, Decision: contracts.DecisionDeny}
+func deniedAnswer(requestID string, reason DenialReason) contracts.ApprovalAnswer {
+	return contracts.ApprovalAnswer{ID: requestID, Decision: contracts.DecisionDeny, Reason: reason.Key()}
 }
 
 func marshalWithin(value any) ([]byte, error) {
