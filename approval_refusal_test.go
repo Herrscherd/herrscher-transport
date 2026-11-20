@@ -385,6 +385,21 @@ func TestRefusedAllowIsNotWritten(t *testing.T) {
 	}
 }
 
+type refusingClientStream struct {
+	grpc.ClientStream
+}
+
+func (s *refusingClientStream) SendMsg(any) error { return errSendRefused }
+
+func TestRefusalWriteRefusedByStreamEndsTurn(t *testing.T) {
+	turn := newApprovalTurn(func() {}, nil)
+	turn.stream = &refusingClientStream{}
+	turn.sendAnswer(contracts.ApprovalAnswer{ID: "s1", Decision: contracts.DecisionDeny, Refusal: contracts.RefusalNoAsker})
+	if !errors.Is(turn.failed, errSendRefused) {
+		t.Fatalf("a refused write must end the turn as a send failure, got %v", turn.failed)
+	}
+}
+
 func TestRefusalExplicitDenyOnTheWireKeepsItsEmptyReason(t *testing.T) {
 	desk := newApprovalDesk(nil, func() {})
 	waiter, err := desk.open("r2")
