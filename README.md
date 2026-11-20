@@ -77,6 +77,22 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Fail closed: any decision other than allow becomes a deny. An answer whose ID
   matches no pending request, or matches a request already answered, is rejected.
   An answer that does not carry the ID of its request is denied under that ID.
+- Refusals: every refusal the transport makes is a denial whose
+  `ApprovalAnswer.Refusal` carries a `contracts.ApprovalRefusal` code: `invalid`,
+  `too_large`, `too_many`, `no_asker`, `cancelled`, `deadline`, `stream_closed`,
+  `send_failed` or `unclassified`. If a code cannot be set, which the transport's
+  own constants never cause, the answer stays a bare deny with no code, the error
+  is surfaced, and the turn ends. A refusal carries no `Reason`. `unclassified`
+  marks a cause the transport does not classify. A denial the asker chooses keeps
+  the reason the asker gives, which may be empty, and an asker's answer that
+  carries a `Refusal` is itself refused as `invalid`. The transport refuses an
+  answer without a valid decision as `invalid`, whether the asker or the peer
+  sent it. An answer from the peer that carries a `Refusal` is a refusal, even
+  with a code this version does not know: `Allowed()` is false for it. An allow
+  that carries a `Refusal` is never written (`contracts.ErrRefusedAllow`), and a
+  failed write ends the turn like any other send failure. A single cut of the
+  stream can end a request as `stream_closed` or as `cancelled`, depending on
+  which side sees the break first.
 - Bounds: an approval frame (a request or an answer) is at most 64 KiB of JSON.
   The client decodes the whole frame first, then checks its size before the
   asker sees it, so the check does not limit decoding. gRPC's 4 MiB default

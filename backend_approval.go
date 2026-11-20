@@ -25,7 +25,10 @@ const (
 	approvalWorkerGrace                   = 500 * time.Millisecond
 )
 
-var errStreamClosed = errors.New("transport: approval stream closed")
+var (
+	errStreamClosed = errors.New("transport: approval stream closed")
+	errSendFailed   = errors.New("transport: approval send failed")
+)
 
 type backendApprovalSrv interface {
 	respondWithApprovals(req *pb.MethodEnvelope, stream grpc.ServerStream) error
@@ -111,8 +114,8 @@ func (s *frameSink) sendPayload(payload []byte) error {
 		return errStreamClosed
 	}
 	if err := s.stream.SendMsg(&pb.ResultEnvelope{JsonPayload: payload}); err != nil {
-		s.err = err
-		return err
+		s.err = fmt.Errorf("%w: %w", errSendFailed, err)
+		return s.err
 	}
 	return nil
 }
@@ -138,34 +141,42 @@ func newApprovalDesk(sink *frameSink, cancel context.CancelFunc) *approvalDesk {
 func (d *approvalDesk) ask(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
 	if req.ID == "" {
 		d.abort(ErrInvalidApproval)
-		return deniedAnswer(req.ID)
+		return d.refuse(req.ID, contracts.RefusalInvalid)
 	}
 	payload, err := marshalWithin(backendFrame{Approval: &req})
 	if err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return d.refuse(req.ID, refusalFor(err))
 	}
 	waiter, err := d.open(req.ID)
 	if err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return d.refuse(req.ID, refusalFor(err))
 	}
 	defer d.forget(req.ID, waiter)
 	if err := d.sink.sendPayload(payload); err != nil {
 		d.abort(err)
-		return deniedAnswer(req.ID)
+		return d.refuse(req.ID, refusalFor(err))
 	}
 	select {
 	case answer := <-waiter:
 		return answer
 	case <-ctx.Done():
-		return deniedAnswer(req.ID)
+		return d.refuse(req.ID, refusalFor(d.cause(ctx)))
 	}
 }
 
 func (d *approvalDesk) abort(err error) {
 	d.fail(err)
 	d.cancel()
+}
+
+func (d *approvalDesk) refuse(requestID string, refusal contracts.ApprovalRefusal) contracts.ApprovalAnswer {
+	answer, err := refusedAnswer(requestID, refusal)
+	if err != nil {
+		d.abort(err)
+	}
+	return answer
 }
 
 func (d *approvalDesk) open(requestID string) (chan contracts.ApprovalAnswer, error) {
@@ -195,7 +206,7 @@ func (d *approvalDesk) readAnswers(stream grpc.ServerStream) {
 	for {
 		msg := new(pb.MethodEnvelope)
 		if err := stream.RecvMsg(msg); err != nil {
-			d.fail(fmt.Errorf("transport: approval answers ended: %w", err))
+			d.fail(fmt.Errorf("%w: %w", errStreamClosed, err))
 			return
 		}
 		if err := d.accept(msg); err != nil {
@@ -216,6 +227,13 @@ func (d *approvalDesk) accept(msg *pb.MethodEnvelope) error {
 	if err := Unmarshal(msg.JsonPayload, &answer); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidApproval, err)
 	}
+	if !validDecision(answer.Decision) {
+		refused, err := refusedAnswer(answer.ID, contracts.RefusalInvalid)
+		if err != nil {
+			return err
+		}
+		answer = refused
+	}
 	return d.deliver(answer)
 }
 
@@ -227,9 +245,6 @@ func (d *approvalDesk) deliver(answer contracts.ApprovalAnswer) error {
 		return fmt.Errorf("%w: %q", ErrUnknownApproval, answer.ID)
 	}
 	delete(d.pending, answer.ID)
-	if !answer.Allowed() {
-		answer.Decision = contracts.DecisionDeny
-	}
 	waiter <- answer
 	return nil
 }
@@ -248,10 +263,22 @@ func (d *approvalDesk) failure() error {
 	return d.failed
 }
 
+func (d *approvalDesk) cause(ctx context.Context) error {
+	if err := d.failure(); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
 // RespondWithApprovals runs one turn on a remote backend that may ask the daemon to
 // approve tools. Its events and its reply are those of Respond. Each approval request
 // the backend raises is answered by the ApprovalAsker the context carries (see
-// contracts.WithApprovalAsker), and a context without an asker denies every request.
+// contracts.WithApprovalAsker), and a context without an asker denies every request with
+// contracts.RefusalNoAsker. Each refusal the transport makes is a denial that names its cause
+// in ApprovalAnswer.Refusal. If a code cannot be set, which the transport's own constants never
+// cause, the answer stays a bare deny with no code, the error is surfaced, and the turn ends.
+// A refusal carries no Reason, except a denial the asker chooses, which keeps the reason the
+// asker gives, possibly empty.
 // The 64 KiB bound applies to approval frames only. The client decodes the whole
 // frame first and checks its size before the asker sees it, so the bound does not
 // limit decoding: gRPC's 4 MiB default receive limit does. An asker must return once
@@ -369,9 +396,13 @@ func (t *approvalTurn) finish(requestID string) {
 }
 
 func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest) {
-	payload, err := marshalWithin(t.decide(ctx, req))
+	t.sendAnswer(t.decide(ctx, req))
+}
+
+func (t *approvalTurn) sendAnswer(answer contracts.ApprovalAnswer) {
+	payload, err := marshalWithin(answer)
 	if errors.Is(err, ErrApprovalTooLarge) {
-		payload, err = Marshal(deniedAnswer(req.ID))
+		payload, err = marshalWithin(t.refuse(answer.ID, contracts.RefusalTooLarge))
 	}
 	if err != nil {
 		t.fail(fmt.Errorf("backend: encode approval answer: %w", err))
@@ -387,14 +418,22 @@ func (t *approvalTurn) reply(ctx context.Context, req contracts.ApprovalRequest)
 
 func (t *approvalTurn) decide(ctx context.Context, req contracts.ApprovalRequest) contracts.ApprovalAnswer {
 	if t.asker == nil {
-		return deniedAnswer(req.ID)
+		return t.refuse(req.ID, contracts.RefusalNoAsker)
 	}
 	answer := t.asker(ctx, req)
-	if ctx.Err() != nil || answer.ID != req.ID {
-		return deniedAnswer(req.ID)
+	if err := ctx.Err(); err != nil {
+		return t.refuse(req.ID, refusalFor(err))
 	}
-	if !answer.Allowed() {
-		answer.Decision = contracts.DecisionDeny
+	if answer.ID != req.ID || !validDecision(answer.Decision) || answer.Refusal != "" {
+		return t.refuse(req.ID, contracts.RefusalInvalid)
+	}
+	return answer
+}
+
+func (t *approvalTurn) refuse(requestID string, refusal contracts.ApprovalRefusal) contracts.ApprovalAnswer {
+	answer, err := refusedAnswer(requestID, refusal)
+	if err != nil {
+		t.fail(err)
 	}
 	return answer
 }
@@ -438,8 +477,9 @@ func (t *approvalTurn) drain() error {
 	}
 }
 
-func deniedAnswer(requestID string) contracts.ApprovalAnswer {
-	return contracts.ApprovalAnswer{ID: requestID, Decision: contracts.DecisionDeny}
+func validDecision(decision contracts.ApprovalDecision) bool {
+	_, err := contracts.ParseApprovalDecision(string(decision))
+	return err == nil
 }
 
 func marshalWithin(value any) ([]byte, error) {
