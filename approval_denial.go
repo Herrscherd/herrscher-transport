@@ -13,7 +13,7 @@ type DenialReason uint8
 
 const (
 	// DenialInvalid reports a request or answer that is malformed, lacks its ID, repeats
-	// the ID of a request still in flight, or carries another ID.
+	// the ID of a request still in flight, carries another ID, or carries no valid decision.
 	DenialInvalid DenialReason = iota + 1
 	// DenialTooLarge reports a request or answer above the approval size bound.
 	DenialTooLarge
@@ -29,6 +29,8 @@ const (
 	DenialStreamClosed
 	// DenialSendFailed reports a request or answer that the stream could not send.
 	DenialSendFailed
+	// DenialUnclassified reports a refusal whose cause the transport does not classify.
+	DenialUnclassified
 )
 
 // DenialReasons returns every denial reason in declaration order, so a host can check
@@ -37,6 +39,7 @@ func DenialReasons() []DenialReason {
 	return []DenialReason{
 		DenialInvalid, DenialTooLarge, DenialTooMany, DenialNoAsker,
 		DenialCancelled, DenialDeadline, DenialStreamClosed, DenialSendFailed,
+		DenialUnclassified,
 	}
 }
 
@@ -60,13 +63,15 @@ func (r DenialReason) Key() string {
 		return "approval.refused.stream_closed"
 	case DenialSendFailed:
 		return "approval.refused.send_failed"
+	case DenialUnclassified:
+		return "approval.refused.unclassified"
 	}
 	return fmt.Sprintf("approval.refused.unknown_%d", r)
 }
 
 func denialFor(err error) DenialReason {
 	switch {
-	case errors.Is(err, ErrInvalidApproval):
+	case errors.Is(err, ErrInvalidApproval), errors.Is(err, ErrUnknownApproval):
 		return DenialInvalid
 	case errors.Is(err, ErrApprovalTooLarge):
 		return DenialTooLarge
@@ -78,6 +83,8 @@ func denialFor(err error) DenialReason {
 		return DenialCancelled
 	case errors.Is(err, errStreamClosed):
 		return DenialStreamClosed
+	case errors.Is(err, errSendFailed):
+		return DenialSendFailed
 	}
-	return DenialSendFailed
+	return DenialUnclassified
 }
