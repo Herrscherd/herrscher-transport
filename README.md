@@ -77,6 +77,12 @@ stream, and each answer goes back up the same stream, correlated by request ID.
 - Fail closed: any decision other than allow becomes a deny. An answer whose ID
   matches no pending request, or matches a request already answered, is rejected.
   An answer that does not carry the ID of its request is denied under that ID.
+- Reasons: every denial the transport makes carries a `DenialReason` in
+  `ApprovalAnswer.Reason`, as its `Key()`: `approval.refused.invalid`,
+  `too_large`, `too_many`, `no_asker`, `cancelled`, `deadline`, `stream_closed`
+  or `send_failed`. The keys are stable catalog keys for the host to translate,
+  so a refusal never reaches the human as a bare deny. A denial the asker chose
+  keeps the reason the asker gave.
 - Bounds: an approval frame (a request or an answer) is at most 64 KiB of JSON.
   The client decodes the whole frame first, then checks its size before the
   asker sees it, so the check does not limit decoding. gRPC's 4 MiB default
