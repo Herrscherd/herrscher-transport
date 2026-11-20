@@ -267,6 +267,21 @@ func TestRefusalWithoutCodeFailsClosedAndIsSurfaced(t *testing.T) {
 	}
 }
 
+func TestRefusalWithoutCodeEndsTurnWithDeny(t *testing.T) {
+	cancelled := false
+	turn := newApprovalTurn(func() { cancelled = true }, nil)
+	answer := turn.refuse("r1", "")
+	if answer.Allowed() || answer.Decision != contracts.DecisionDeny || answer.Refusal != "" {
+		t.Fatalf("a refusal without a code must still deny, got %+v", answer)
+	}
+	if turn.failed == nil {
+		t.Fatal("a refusal that cannot be written must be recorded on the turn")
+	}
+	if !cancelled {
+		t.Fatal("a refusal that cannot be written must end the turn")
+	}
+}
+
 func TestRefusalUnknownIDOnTheWireIsInvalid(t *testing.T) {
 	stream := &inboxServerStream{inbox: []*pb.MethodEnvelope{
 		answerEnvelope(t, contracts.ApprovalAnswer{ID: "nope", Decision: contracts.DecisionAllow}),
